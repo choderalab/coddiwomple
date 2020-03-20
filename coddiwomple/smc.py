@@ -51,12 +51,11 @@ def SMC(target_factory,
     >>> incremental_weights = [target_factory.compute_incremental_work(particle) for particle in particles] #not updated in place
     >>>
     >>> while True:
-    >>>     resampler.attempt_resample(particles, incremental_weights) #handles the reweighting from the previous incremental work
+    >>>     resampler.attempt_resample(particles, incremental_weights, **kwargs) #handles the reweighting from the previous incremental work
     >>>     reporter.record(particles) #record the particles...
     >>>     if all([target_factory.terminate(particle) for particle in particles]):
     >>>         break
     >>>     #otherwise...
-    >>>     reporter.record(particles)
     >>>     [proposal_factory.propagate(particle) for particle in particles] #update the state, compute the logp_proposal_ratio within the particle objects
     >>>     incremental_weights = [target_factory.compute_incremental_work(particle) for particle in particles]
     >>>

@@ -22,8 +22,6 @@ class Particle(object):
                 incremental (unnormalized) -log(weight_(incremental_unnormalized,t))
             _proposal_works : list
                 incremental -log(weight_(proposal,t))
-            _state_works : list
-                incremental -log(weight_(state, t))
             _state : coddiwomple.particles.ParticleState
                 state of the system
 
@@ -31,13 +29,26 @@ class Particle(object):
         self._cumulative_work = 0.
         self._incremental_works = []
         self._proposal_works = []
-        self._state_works = []
         self._state = None
         self._ancestry = [index]
 
         # provision incremental work
-        self._provisional_incremental_work = 0.
+        self._auxiliary_work = 0.
 
+        def update_auxiliary_work(self, incremental_work):
+            """
+            update the auxiliary work in place
+
+            arguments
+                incremental_work : float
+            """
+            self._auxiliary_work += incremental_work
+
+        def zero_auxiliary_work(self):
+            """
+            reset the auxiliary work to 0.
+            """
+            self._auxiliary_work = 0.
 
         def update_work(self, incremental_work):
             """
@@ -61,27 +72,7 @@ class Particle(object):
             last_proposal_work = self._proposal_works[-1]
             return last_proposal_work
 
-        def get_last_state_work(self):
-            """
-            return
-                last_state_work : float
-                    self._state_works[-1]
-            """
-            last_state_work = self._state_works[-1]
-            return last_state_work
-
-        def set_new_state_work(self, state_work):
-            """
-            initialize a new state work with the argument value
-
-            arguments
-                state_work : float
-                    state work increment
-            """
-
-            self._state_works.append(state_work)
-
-        def update_proposal_works(self, proposal_work):
+        def update_proposal_work(self, proposal_work):
             """
             update the proposal_work
 
@@ -90,16 +81,6 @@ class Particle(object):
                     -log(proposal_weight)
             """
             self._proposal_works.append(proposal_work)
-
-        def update_state_work(self, state_work):
-            """
-            update the state_work in place
-
-            arguments
-                state_work : float
-                    -log(state_weight)
-            """
-            self._state_works[-1] = state_work
 
         def update_ancestry(self, index):
             """
@@ -128,14 +109,14 @@ class Particle(object):
         def incremental_works(self):
             return self._incremental_works
         @property
-        def logp_proposals(self):
-            return self._logp_proposals
-        @property
-        def logp_states(self):
-            return self._logp_states
+        def proposal_works(self):
+            return self._proposal_works
         @property
         def state(self):
             return self._state
         @property
         def ancestry(self):
             return self._ancestry
+        @property
+        def auxiliary_work(self):
+            return self._auxiliary_work

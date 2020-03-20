@@ -45,3 +45,13 @@ class PDFState():
                 generalizable parameterization object
         """
         pass
+
+    def get_parameters(self):
+        """
+        return the current parameters
+
+        return
+            returnable_dict : dict
+                dictionary of the current parameter names and values {str: float}
+        """
+        pass

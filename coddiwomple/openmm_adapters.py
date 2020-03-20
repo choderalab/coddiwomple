@@ -42,7 +42,11 @@ class OpenMMPDFState(PDFState, CompoundThermodynamicState):
     PDFState for openmmtools.states.CompoundThermodynamicState
     """
 
-    def __init__(self, system, temperature = 300 * unit.kelvin, pressure = 1.0 * unit.atmosphere, **kwargs):
+    def __init__(self,
+                 system,
+                 temperature = 300 * unit.kelvin,
+                 pressure = 1.0 * unit.atmosphere,
+                 **kwargs):
         """
         Subclass of coddiwomple.states.PDFState that specifically handles openmmtools.states.CompoundThermodynamicStates
         Init method does the following:
@@ -72,9 +76,25 @@ class OpenMMPDFState(PDFState, CompoundThermodynamicState):
         update the pdf_state parameters in place
 
         arguments
-            parameters : np.array or float or dict
-                generalizable parameterization object
+            parameters : dict
+                dictionary of variables
         """
+        assert set([param for param in self._parameters.keys() if param is not None]) == set(parameters.keys()), f"the parameter keys supplied do not match the internal parameter names"
+        for key,val in parameters.items():
+            setattr(self, key, val)
+
+    def get_parameters(self):
+        """
+        return the current parameters
+
+        return
+            returnable_dict : dict
+                dictionary of the current parameter names and values {str: float}
+        """
+        returnable_dict = {i:j for i, j in _composable_states[0]._parameters.items() if j is not None}
+        return returnable_dict
+
+
 
 
 #TargetFactory Adapter
@@ -91,6 +111,7 @@ class OpenMMTargetFactory(TargetFactory):
                 thermodynamic state of the targets
         """
         super(TargetFactory, self).__init__(pdf_state = openmm_pdf_state, **kwargs)
+        
 
 #ProposalFactory Adapter
 class OpenMMProposalFactory(ProposalFactory):
