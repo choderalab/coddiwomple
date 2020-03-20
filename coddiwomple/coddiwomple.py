@@ -5,6 +5,15 @@ A pythonic Sequential Monte Carlo (SMC) library for molecular mechanics and Baye
 Handles the primary functions
 """
 
+#####Imports#####
+import logging
+import os
+
+#####Instantiate Logger#####
+logging.basicConfig(level = logging.NOTSET)
+_logger = logging.getLogger("coddiwomple")
+_logger.setLevel(logging.DEBUG)
+
 
 def canvas(with_attribution=True):
     """
@@ -27,6 +36,9 @@ def canvas(with_attribution=True):
     if with_attribution:
         quote += "\n\t- Adapted from Henry David Thoreau"
     return quote
+
+
+
 
 
 if __name__ == "__main__":
