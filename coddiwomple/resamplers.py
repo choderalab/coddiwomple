@@ -4,6 +4,8 @@ Resampler Module
 #####Imports#####
 import copy
 import logging
+import numpy as np
+from scipy.special import logsumexp
 
 #####Instantiate Logger#####
 logging.basicConfig(level = logging.NOTSET)
@@ -14,7 +16,7 @@ class Resampler():
     """
     Generalized Resampler (super) class for resampling a list of coddiwomple.partiles.Particle objects
     """
-    def __init__(self, observable = None, threshold = None, observable_kwargs = None):
+    def __init__(self, observable = None, threshold = None, observable_kwargs = None, **kwargs):
         """
         initialize a resampler counter
 
@@ -43,6 +45,10 @@ class Resampler():
                 observable function kwargs
             always_resample : bool, default True
                 if observable is None, then we always resample, else False
+
+        NOTE : the _resample method in this super class conducts sequential importance sampling (i.e. no resampling is conducted)
+
+        TODO : add support for variable number of resamples
         """
         from coddiwomple.utils import add_method
         self.resample_log = []
@@ -83,14 +89,15 @@ class Resampler():
             update_particle_indices : bool, default True
                 whether to update the particle indices
         """
-        observable_value = observable(particles, incremental_works)
-        resample_bool = threshold(observable_value, **kwargs)
+        observable_value = observable(particles, incremental_works) #compute an observable on the particles
+        resample_bool = threshold(observable_value, **kwargs) #ask to resample
 
         if resample_bool:
             #the we will resample the particles
-            resampled_indices = self._resample(particles)
             previous_cumulative_works = np.array(particle.cumulative_work() for particle in particles)
-            new_cumulative_work = np.mean(previous_cumulative_works + incremental_works) #we always do 'complete' resampling
+            updated_cumulative_works = previous_cumulative_works + incremental_works
+            mean_cumulative_work =  -logsumexp(-updated_cumulative_works) + np.log(len(updated_cumulative_works)) #we always do 'complete' resampling, and we can't do just an empirical average of works
+            resampled_indices = self._resample(cumulative_works = updated_cumulative_works, num_resamples = len(updated_cumulative_works), **kwargs) #at present, always resample
 
             #make necessary pointers for resampling
             copy_particle_auxiliaries = [particle.auxiliary_work() for particle in particles]
@@ -103,7 +110,7 @@ class Resampler():
                                      from_particle_auxiliary_work = copy_particle_auxiliaries[resampling_particle_index],
                                      from_particle_state = copy.deepcopy(copy_particle_states[resampling_particle_index]),
                                      from_particle_index = copy_particle_indices[resampling_particle_index],
-                                     cumulative_work = new_cumulative_work)
+                                     cumulative_work = mean_cumulative_work)
         else:
             #then we do not resample the particles
             [self._null_update_particle(particle, incremental_work, **kwargs) for particle, incremental_work in zip(particles, incremental_works)]
@@ -175,18 +182,73 @@ class Resampler():
         #7.
         particle_to_update.update_ancestry(from_particle_index)
 
-    def _resample(particles, num_resamples, **kwargs):
+    def _resample(cumulative_works, num_resamples, **kwargs):
         """
-        Dummy _resample method
+        Dummy _resample method; dummy method does NOT resample
 
-        arguments:
-            particles : list(coddiwomple.particles.Particle)
-                particles to resample
+        arguments
+            cumulative_works : np.ndarray (floats)
+                ndarray of -log(weights_t) of particles; i.e. cumulative weights of particles at iteration t
             num_resamples : int
-                number of particles to resample
+                number of resamples to generate
 
         returns
             resampled_indices : list(int)
                 list of indices of particles (argument) that are resampled
         """
-        pass
+        return range(num_resamples)
+
+class MultinomialResampler(Resampler):
+    """
+    Subclass to conduct a vanilla multinomial resampler
+    """
+    def __init__(self, observable = None, threshold = None, observable_kwargs = None, **kwargs):
+        """
+        initialize a resampler counter
+
+        arguments
+            observable : function, default None
+                function to compute an observable from a list of particles;
+                if None, resampling will always be conducted; else,
+                if the threshold of the observable is surpassed, resampling will be conducted
+            threshold : function, default None
+                the threshold function of the observable;
+                the return of the threshold must be a bool, which determines whether to resample
+            observable_kwargs : dict, default None
+                observable function kwargs
+
+        parameters
+            resample_log : list
+                list of iterations wherein the particles are resampled
+            observable : function, default None
+                function to compute an observable from a list of particles;
+                if None, resampling will always be conducted; else,
+                if the threshold of the observable is surpassed, resampling will be conducted
+            threshold : function, default None
+                the threshold function of the observable;
+                the return of the threshold must be a bool, which determines whether to resample
+            observable_kwargs : dict, default None
+                observable function kwargs
+            always_resample : bool, default True
+                if observable is None, then we always resample, else False
+        """
+        super(Resampler, self).__init__(observable = None, threshold = None, observable_kwargs = None, **kwargs)
+
+    def _resample(cumulative_works, num_resamples, **kwargs):
+        """
+        conduct a multinomial resample (i.e. categorical )
+
+        arguments
+            cumulative_works : np.ndarray (floats)
+                ndarray of -log(weights_t) of particles; i.e. cumulative weights of particles at iteration t
+            num_resamples : int
+                number of resamples to generate
+
+        returns
+            resampled_indices : list(int)
+                list of indices of particles (argument) that are resampled
+        """
+        from coddiwomple.utils import normalized_weights
+
+        normalized_weights = normalized_weights(cumulative_works)
+        resampled_indices = np.random.choice(len(particles), len(num_particles), p = normalized_weights, replace = True)
