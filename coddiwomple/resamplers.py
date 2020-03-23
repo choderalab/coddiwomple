@@ -251,4 +251,4 @@ class MultinomialResampler(Resampler):
         from coddiwomple.utils import normalized_weights
 
         normalized_weights = normalized_weights(cumulative_works)
-        resampled_indices = np.random.choice(len(particles), len(num_particles), p = normalized_weights, replace = True)
+        resampled_indices = np.random.choice(len(cumulative_works), num_resamples, p = normalized_weights, replace = True)

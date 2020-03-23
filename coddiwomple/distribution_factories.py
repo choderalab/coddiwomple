@@ -141,7 +141,7 @@ class ProposalFactory(DistributionFactory):
     """
     Manage Proposal probability distributions
     """
-    def __init__(self, pdf_state, parameter_sequence, **kwargs):
+    def __init__(self, pdf_state, parameter_sequence, propagator, **kwargs):
         """
         Initialize the pdf_state
 
@@ -150,6 +150,8 @@ class ProposalFactory(DistributionFactory):
                 the generalized PDFState object representing a parametrizable probability distribution function
             parameter_sequence : list
                 sequence to parametrize the pdf_state
+            propagator : coddiwomple.propagators.Propagator
+                the propagator of dynamics
 
 
         parameters
@@ -159,6 +161,8 @@ class ProposalFactory(DistributionFactory):
                 sequence to parametrize the pdf_state
         """
         super(ProposalFactory, self).__init__(pdf_state, parameter_sequence)
+
+        self._propagator = propagator
 
 
     def generate_initial_sample(self, particle, intial_pdf_state = None, **kwargs):
@@ -192,3 +196,22 @@ class ProposalFactory(DistributionFactory):
         #particle.update_work(initial_work) #we don't actually want to do this until the resampler says its ok
         particle.update_auxiliary_work(-state_reduced_potential) #we need this variable for the next increment
         return initial_work
+
+    def propagate(self, particle, num_iterations = 1, **kwargs):
+        """
+        Propagate a particle's state and update in place
+
+        arguments
+            particle : coddiwomple.particles.ParticleState
+                the particle to propagate
+            num_iterations : int
+                number of sequential iterations of the propagator move
+        """
+        #first, update the pdf state
+        iteration = len(particle.incremental_works())
+        self.update_pdf(iteration)
+
+        #then, propagate and update the state/proposal_work
+        state, proposal_work = self._propagator.apply(particle_state = particle.state(), pdf_state = self.pdf_state, num_iterations = num_iterations, **kwargs)
+        particle.update_state(state)
+        particle.update_proposal_work(proposal_work)
