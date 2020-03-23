@@ -8,12 +8,14 @@ class Particle(object):
     """
     Generalized Particle Object to hold particle ancestry, logp_proposal_ratios (i.e. logp(K_reverse/K_forward)), logp_state, incremental, and cumulative works
     """
-    def __init__(self, index, **kwargs):
+    def __init__(self, index, record_states = False, **kwargs):
         """
         Generalized initialization method for Particle
         arguments
             index : int
                 integer of the particle initial ancestry
+            record_states : bool, default False
+                whether to record the ParticleState history
 
         parameters
             _cumulative_work : float
@@ -24,6 +26,8 @@ class Particle(object):
                 incremental -log(weight_(proposal,t))
             _state : coddiwomple.particles.ParticleState
                 state of the system
+            _record_states : bool, default False
+                whether to record the ParticleState history
 
         """
         self._cumulative_work = 0.
@@ -31,6 +35,12 @@ class Particle(object):
         self._proposal_works = []
         self._state = None
         self._ancestry = [index]
+
+        self._record_states = record_states
+        if self._record_states:
+            self._state_history = []
+        else:
+            self._state_history = None
 
         # provision incremental work
         self._auxiliary_work = 0.
@@ -82,6 +92,16 @@ class Particle(object):
             """
             self._proposal_works.append(proposal_work)
 
+        def update_proposal_work_in_place(self, proposal_work):
+            """
+            update the proposal_work in place
+
+            arguments
+                proposal_work : float
+                    -log(proposal_weight)
+            """
+            self._proposal_works[-1] = proposal_work
+
         def update_ancestry(self, index):
             """
             update the ancestry of the particle
@@ -92,14 +112,28 @@ class Particle(object):
             """
             self._ancestry.append(index)
 
-        def update_state(self, state):
+        def update_state(self, state, amend_state_history = False, state_history_index = -1):
             """
             update the state of the particle
 
             arguments :
                 state : coddiwomple.states.ParticleState
+                    updated state
+                amend_state_history : bool, default False
+                    whether to modify the state history
+                state_history_index : int
+                    index of the state history to update
+
+            NOTE : if self._record_states is False, amend_state_history and state_history_index are not called, nor is a state history update conducted
             """
+            if self._record_states:
+                if amend_state_history:
+                    self._state_history[state_history_index] = copy.deepcopy(state)
+                else:
+                    self._state_history.append(copy.deepcopy(state))
+
             self._state = state
+
 
 
         @property
@@ -120,3 +154,6 @@ class Particle(object):
         @property
         def auxiliary_work(self):
             return self._auxiliary_work
+        @property
+        def state_history(self):
+            return self._state_history
