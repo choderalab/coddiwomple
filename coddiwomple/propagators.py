@@ -40,26 +40,15 @@ class MCMCMove():
 class Propagator():
     """
     Generalized propagator object.
-    Propagator objects are equipped with:
-        1. coddiwomple.states.PDFState
-        2. coddiwomple.propagators.MCMCMove
     """
 
-    def __init__(self, move, **kwargs):
+    def __init__(self, **kwargs):
         """
         initialize a propagator
-
-        arguments
-            move : coddiwomple.propagators.MCMCMove
-                the move with which to apply
-
-        parameters
-            _move : coddiwomple.propagators.MCMCMove
-                the move with which to apply
         """
-        self._move = move
+        pass
 
-    def apply(self, particle_state, pdf_state, num_iterations, **kwargs):
+    def propagate(self, particle_state, pdf_state, num_iterations, **kwargs):
         """
         apply an equipped 'MCMCMove' (possibly determined by an invariant distribution defined by pdf_state (a PDFState)) to a particle_state (i.e. a ParticleState)
 
@@ -81,6 +70,7 @@ class Propagator():
         """
         proposal_work = 0.
         for i in range(num_iterations):
-            proposal_work += self._move.run(particle_state = particle_state, pdf_state = pdf_state, **kwargs)
+            proposal_work += self.apply(particle_state = particle_state, pdf_state = pdf_state, **kwargs)
 
         return particle_state, proposal_work
+    

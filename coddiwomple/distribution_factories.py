@@ -212,6 +212,6 @@ class ProposalFactory(DistributionFactory):
         self.update_pdf(iteration)
 
         #then, propagate and update the state/proposal_work
-        state, proposal_work = self._propagator.apply(particle_state = particle.state(), pdf_state = self.pdf_state, num_iterations = num_iterations, **kwargs)
+        state, proposal_work = self._propagator.propagate(particle_state = particle.state(), pdf_state = self.pdf_state, num_iterations = num_iterations, **kwargs)
         particle.update_state(state)
         particle.update_proposal_work(proposal_work)
