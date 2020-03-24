@@ -10,9 +10,11 @@ from coddiwomple.proposals import ProposalFactory
 from openmmtools.states import SamplerState, ThermodynamicState, CompoundThermodynamicState, IComposableStates
 from coddiwomple.propagators import MCMCMove
 from openmmtools import cache, utils
+from openmmtools import integrators
 from perses.dispersed.utils import check_platform, configure_platform #TODO: make sure this is functional and supports mixed precision
 from simtk import unit
 import simtk.openmm as openmm
+from coddiwomple.openmm_utils import get_dummy_integrator
 
 #define the cache
 cache.global_context_cache.platform = configure_platform(utils.get_fastest_platform().getName())
@@ -265,9 +267,7 @@ class OpenMMBaseIntegratorMove(Propagator, openmmtools.mcmc.BaseIntegratorMove):
         return particle_state, proposal_work
 
 class OpenMMLangevinDynamicsMove(OpenMMBaseIntegratorMove):
-    """
-    Langevin dynamics segment as a (pseudo) Monte Carlo move.
-
+    """Langevin dynamics segment as a (pseudo) Monte Carlo move.
     This move assigns a velocity from the Maxwell-Boltzmann distribution
     and executes a number of Maxwell-Boltzmann steps to propagate dynamics.
     This is not a *true* Monte Carlo move, in that the generation of the
@@ -297,28 +297,169 @@ class OpenMMLangevinDynamicsMove(OpenMMBaseIntegratorMove):
         context_cache : openmmtools.cache.ContextCache, optional
             The ContextCache to use for Context creation. If None, the global cache
             openmmtools.cache.global_context_cache is used (default is None).
+
+    attributes
+        timestep : simtk.unit.Quantity
+            The timestep to use for Langevin integration (time units).
+        collision_rate : simtk.unit.Quantity
+            The collision rate with fictitious bath particles (1/time units).
+        n_steps : int
+            The number of integration timesteps to take each time the move
+            is applied.
+        reassign_velocities : bool
+            If True, the velocities will be reassigned from the Maxwell-Boltzmann
+            distribution at the beginning of the move.
+        context_cache : openmmtools.cache.ContextCache
+            The ContextCache to use for Context creation. If None, the global
+            cache openmmtools.cache.global_context_cache is used.
     """
 
-    def __init__(self,
-                 timestep=1.0*unit.femtosecond,
-                 collision_rate=10.0/unit.picoseconds,
-                 n_steps=1000,
-                 reassign_velocities=False,
-                 **kwargs):
+    def __init__(self, timestep=1.0*unit.femtosecond, collision_rate=10.0/unit.picoseconds,
+                 n_steps=1000, reassign_velocities=False, **kwargs):
         super(OpenMMLangevinDynamicsMove, self).__init__(n_steps=n_steps,
-                                                         reassign_velocities=reassign_velocities,
-                                                         **kwargs)
-
+                                                   reassign_velocities=reassign_velocities,
+                                                   **kwargs)
         self.timestep = timestep
         self.collision_rate = collision_rate
 
+class OpenMMLangevinDynamicsSplittingMove(OpenMMLangevinDynamicsMove):
+     """
+    Langevin dynamics segment with custom splitting of the operators and optional Metropolized Monte Carlo validation.
+    Besides all the normal properties of the :class:`LangevinDynamicsMove`, this class implements the custom splitting
+    sequence of the :class:`openmmtools.integrators.LangevinIntegrator`. Additionally, the steps can be wrapped around
+    a proper Generalized Hybrid Monte Carlo step to ensure that the exact distribution is generated.
+
+    NOTE: heat is always measured, but 'shadow work' is not
+
+    arguments
+        timestep : simtk.unit.Quantity, optional
+            The timestep to use for Langevin integration
+            (time units, default is 1*simtk.unit.femtosecond).
+        collision_rate : simtk.unit.Quantity, optional
+            The collision rate with fictitious bath particles
+            (1/time units, default is 10/simtk.unit.picoseconds).
+        n_steps : int, optional
+            The number of integration timesteps to take each time the
+            move is applied (default is 1000).
+        reassign_velocities : bool, optional
+            If True, the velocities will be reassigned from the Maxwell-Boltzmann
+            distribution at the beginning of the move (default is False).
+        context_cache : openmmtools.cache.ContextCache, optional
+            The ContextCache to use for Context creation. If None, the global cache
+            openmmtools.cache.global_context_cache is used (default is None).
+        splitting : string, default: "V R O R V"
+            Sequence of "R", "V", "O" (and optionally "{", "}", "V0", "V1", ...) substeps to be executed each timestep.
+            Forces are only used in V-step. Handle multiple force groups by appending the force group index
+            to V-steps, e.g. "V0" will only use forces from force group 0. "V" will perform a step using all forces.
+            "{" will cause metropolization, and must be followed later by a "}".
+        constraint_tolerance : float, default: 1.0e-8
+            Tolerance for constraint solver
+
+    attributes
+        timestep : simtk.unit.Quantity
+            The timestep to use for Langevin integration (time units).
+        collision_rate : simtk.unit.Quantity
+            The collision rate with fictitious bath particles (1/time units).
+        n_steps : int
+            The number of integration timesteps to take each time the move
+            is applied.
+        reassign_velocities : bool
+            If True, the velocities will be reassigned from the Maxwell-Boltzmann
+            distribution at the beginning of the move.
+        context_cache : openmmtools.cache.ContextCache
+            The ContextCache to use for Context creation. If None, the global
+            cache openmmtools.cache.global_context_cache is used.
+        splitting : str
+            Splitting applied to this integrator represented as a string.
+        constraint_tolerance : float, default: 1.0e-8
+            Tolerance for constraint solver
+    """
+
+    def __init__(self, timestep=1.0 * unit.femtosecond, collision_rate=1.0 / unit.picoseconds,
+                 n_steps=1000, reassign_velocities=False, splitting="V R O R V", constraint_tolerance=1.0e-8,**kwargs):
+        super(LangevinSplittingDynamicsMove, self).__init__(n_steps=n_steps,
+                                                            reassign_velocities=reassign_velocities,
+                                                            timestep=timestep,
+                                                            collision_rate=collision_rate,
+                                                            **kwargs)
+        self.splitting = splitting
+        self.constraint_tolerance = constraint_tolerance
+
+    def __getstate__(self):
+        serialization = super(LangevinSplittingDynamicsMove, self).__getstate__()
+        serialization['splitting'] = self.splitting
+        serialization['constraint_tolerance'] = self.constraint_tolerance
+        return serialization
+
+    def __setstate__(self, serialization):
+        super(LangevinSplittingDynamicsMove, self).__setstate__(serialization)
+        self.splitting = serialization['splitting']
+        self.constraint_tolerance = serialization['constraint_tolerance']
+
+    def _get_integrator(self, openmm_pdf_state):
+        """Implement BaseIntegratorMove._get_integrator()."""
+        return integrators.LangevinIntegrator(temperature=openmm_pdf_state.temperature,
+                                              collision_rate=self.collision_rate,
+                                              timestep=self.timestep,
+                                              splitting=self.splitting,
+                                              constraint_tolerance=self.constraint_tolerance,
+                                              measure_shadow_work=False,
+                                              measure_heat=True)
+
+
+
+class OpenMMEulerMaruyamaIntegrator(Propagator):
+    """
+    Generalized Euler Maruyama Integrator.
+
+    The Euler Maruyama Integrator for Langevin diffusion uses the following updated procedure
+
+    NOTES :
+        1. Euler Maruyama Integrator does not support SHAKE, SETTLE, or any other constraints.
+        2. integrator is not autodiff-able since the gradients of density (Forces) are computed with OpenMM
+    """
+    def __init__(self, mass_vector, timestep, **kwargs):
+        """
+        Initialize the integrator
+
+        arguments
+            mass_vector : np.ndarray * unit.daltons (or mass units)
+                mass vector of size (1,N) where N is the number of atoms
+            timestep : float * unit.femtosecond (or time units), default 1.0 * unit.femtosecond
+                timestep of dynamics
+
+        attributes
+            mass_vector : np.ndarray * unit.daltons (or mass units)
+                mass vector of size (1,N) where N is the number of atoms
+            timestep : float * unit.femtosecond (or time units), default 1.0 * unit.femtosecond
+                timestep of dynamics
+
+        """
+        assert mass_vector.shape[0] == 1, f"the mass vector is not a column vector"
+        self.mass_vector = mass_vector
+        self.timestep = timestep
+
+        self.x_unit = unit.nanometers
+        self.t_unit = unit.femtoseconds
+        self.m_unit = unit.daltons
+        self.u_unit = self.m_unit * self.x_unit **2 / (self.t_unit **2)
+        self.f_unit = self.u_unit / self.x_unit
+
     def apply(self,
               openmm_pdf_state,
-              particle_state):
+              particle_state,
+              **kwargs):
         """
-        Apply the Langevin dynamics MCMC move.
+        Apply the OpenMMEulerMaruyamaIntegrator once.
         This modifies the given particle_state. The temperature of the
         thermodynamic state is used in Langevin dynamics.
+
+        The update scheme works as follows:
+            x_(k+1) = x_k + (tau) * force(x_k | parameters) * beta + sqrt(2*(tau)) * R(t)
+            where:
+                force(x_k | parameters) = -grad(openmm_pdf_state),
+                tau = D * dt;
+                D = 1 / (openmm_pdf_state.beta * 2 * mass_vector)
 
         arguments
             openmm_pdf_state : openmmtools.states.ThermodynamicState
@@ -332,6 +473,65 @@ class OpenMMLangevinDynamicsMove(OpenMMBaseIntegratorMove):
             proposal_work : float
                 log ratio of the forward to reverse proposal kernels
         """
-        # Explicitly implemented just to have more specific docstring.
-        particle_state, proposal_work = super(LangevinDynamicsMove, self).apply(openmm_pdf_state, particle_state)
+        D = 1. / ( openmm_pdf_state.beta * 2 * self.mass_vector[0,:][:,None] )
+        tau = D * self.timestep**2
+        force = self.get_forces(self.particle_state.state())
+        dx_grad = tau * force * self.openmm_pdf_state.beta #this is the incremental x update from the gradient of the distribution
+
+        #now we add the stochastic part
+        dx_stochastic = np.random.randn(self.mass_vector.shape[1], 3) * np.sqrt(2 * tau.value_in_unit(self.x_unit**2)) * unit.x_unit
+
+        #combine them...
+        dx = dx_grad + dx_stochastic
+        old_positions = self.particle_state.positions
+        new_positions = old_positions + dx
+
+        #compute the proposal_work
+        proposal_work = self._compute_proposal_work(tau, old_positions, new_positions)
+
+
+
         return particle_state, proposal_work
+
+    def get_forces(self, positions):
+        """
+        return a force matrix of shape (N, 3) w.r.t. self.openmm_pdf_state at the positions defined by
+        self.particle_state.positions
+
+        returns
+            force : np.ndarray * self.f_unit
+                the force array (N,3)
+        """
+        integrator = get_dummy_integrator()
+        particle_state = OpenMMParticleState(positions = positions)
+        context, integrator = cache.global_context_cache.get_context(self.openmm_pdf_state, integrator)
+        particle_state.apply_to_context(context, ignore_velocities=True)
+        context_state = context.getState(getForces=True)
+        forces = context_state.getForces(asNumpy=True)
+
+        return forces
+
+    def _compute_proposal_work(self, tau, old_positions, new_positions):
+        """
+        compute the proposal work defined as follows:
+        log(q(x_new|x_old, openmm_pdf_state)) - log(q(x_old | x_new, openmm_pdf_state))
+
+        where q(x' | x) \propto np.exp(||x' - x - tau * grad(log(pi(x))) ||**2)
+
+        arguments
+            tau : float * unit.x_unit **2,
+                position scaling factor
+            old_positions : np.ndarray * unit.x_unit
+                old positions
+            new_positions : np.ndarray * unit.x_unit
+                new positions
+
+        returns
+            proposal_work : float
+                log ratio of the forward to reverse work
+        """
+        old_force, new_force = self.get_forces(old_positions), self.get_forces(new_positions)
+        proposal_work_numerator = -np.sum((new_positions - old_positions - tau * old_force * self.openmm_pdf_state.beta)**2) / (4.0 * tau)
+        proposal_work_denominator = -np.sum((old_positions - new_positions - tau * new_force * self.openmm_pdf_state.beta)**2) / (4.0 * tau)
+        proposal_work = proposal_work_numerator - proposal_work_denominator
+        return proposal_work
