@@ -104,6 +104,10 @@ class Resampler():
             copy_particle_states = [particle.state() for particle in particles]
             copy_particle_indices = [particle.ancestry()[-1] for particle in particles]
 
+            #update the resample_log
+            iteration = len(particles[0].incremental_works())
+            self.resample_log.append(iteration)
+
             for current_particle_index, resampling_particle_index, in enumerate(resampled_indices):
                 #conduct particle updates
                 self._update_particle(particles[current_particle_index],

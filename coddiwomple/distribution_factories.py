@@ -86,7 +86,7 @@ class TargetFactory(DistributionFactory):
             assert termination_parameters_type == parameter_type, f"The termination parameters type ({termination_parameters_type}) do not match the sequence parameters type ({parameter_type})"
             self.termination_parameters = termination_parameters
 
-    def compute_incremental_work(self, particle, **kwargs):
+    def compute_incremental_work(self, particle, neglect_proposal_work = False, **kwargs):
         """
         compute an incremental work where work_(inc,t) = u_t(x_t) - u_(t-1)(x_(t-1)) + proposal_work_t;
         where proposal_work_t = log(K_t(x_t | x_(t-1))) - log(L_(t-1)(x_(t-1) | x_t)).
@@ -100,6 +100,8 @@ class TargetFactory(DistributionFactory):
         arguments
             particle : coddiwomple.particles.Particle
                 the particle for which to generate an initial sample
+            neglect_proposal_work : bool, default False
+                whether to remove the proposal work contribution from the incremental work
 
         returns
             incremental_work : float
@@ -114,7 +116,7 @@ class TargetFactory(DistributionFactory):
 
         #then compute the work
         state_work = u_t - particle.auxiliary_work()
-        proposal_work = particle.proposal_work[-1]
+        proposal_work = particle.proposal_work[-1] if neglect_proposal_work else 0.
         incremental_work = state_work + proposal_work
 
         return incremental_work
