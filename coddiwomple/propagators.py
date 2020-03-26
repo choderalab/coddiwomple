@@ -11,32 +11,6 @@ logging.basicConfig(level = logging.NOTSET)
 _logger = logging.getLogger("propagators")
 _logger.setLevel(logging.DEBUG)
 
-class MCMCMove():
-    """
-    Generalized (super) class of Markov Chain Monte Carlo Moves
-    """
-    def run(self, particle_state, pdf_state, **kwargs):
-        """
-        Run a single iteration of a propagator
-
-        arguments
-            particle_state : coddiwomple.states.ParticleState
-                the particle state to which we apply the move
-            pdf_state : coddiwomple.states.PDFState
-                the pdf_state that (may) govern the self._move;
-                the pdf_state should be parametrized properly here
-
-        returns
-            particle_state : coddiwomple.states.ParticleState
-                the particle state to which we apply the move
-                WARNING : the particle_state is updated in place
-            proposal_work : float
-                -log(weight)
-        """
-        return None, None
-
-
-
 class Propagator():
     """
     Generalized propagator object.
@@ -73,4 +47,3 @@ class Propagator():
             proposal_work += self.apply(particle_state = particle_state, pdf_state = pdf_state, **kwargs)
 
         return particle_state, proposal_work
-    

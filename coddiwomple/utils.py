@@ -17,6 +17,9 @@ def add_method(object, function):
         from functools import partial
         setattr(object, function.__name__, partial(function, object))
 
+def dummy_function():
+    pass
+
 def unnormalized_weights(works):
     """
     simple utility function to compute particle weights from an array of works

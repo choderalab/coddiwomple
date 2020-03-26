@@ -4,6 +4,13 @@ Distribution Factory Module
 #####Imports#####
 import torch
 import numpy as np
+import logging
+import os
+
+#####Instantiate Logger#####
+logging.basicConfig(level = logging.NOTSET)
+_logger = logging.getLogger("distribution_factories")
+_logger.setLevel(logging.DEBUG)
 
 
 class DistributionFactory():
@@ -29,6 +36,7 @@ class DistributionFactory():
         """
         self.pdf_state = pdf_state
         self.parameter_sequence = parameter_sequence
+        _logger.debug(f"equipped pdf state and parameter sequence")
 
     def update_pdf(self, sequence_index):
         """
@@ -72,19 +80,20 @@ class TargetFactory(DistributionFactory):
                 parameters to trigger a termination
                 if None, then the termination parameters will be defined as parameter_sequence[-1]
 
-        parameters
+        attributes
             pdf_state : coddiwomple.states.PDFState
                 the generalized PDFState object representing a parametrizable probability distribution function
             parameter_sequence : iterable
                 sequence to parametrize the pdf_state
         """
-        super(TargetFactory, self).__init__(pdf_state, parameter_sequence)
+        super().__init__(pdf_state, parameter_sequence)
         if termination_parameters is None:
             self.termination_parameters = self.parameter_sequence[-1]
         else:
             termination_parameters_type, parameter_type = type(termination_parameters), type(self.parameter_sequence[0])
             assert termination_parameters_type == parameter_type, f"The termination parameters type ({termination_parameters_type}) do not match the sequence parameters type ({parameter_type})"
             self.termination_parameters = termination_parameters
+        _logger.debug(f"set termination parameters as: {self.termination_parameters}")
 
     def compute_incremental_work(self, particle, neglect_proposal_work = False, **kwargs):
         """
@@ -156,7 +165,7 @@ class ProposalFactory(DistributionFactory):
                 the propagator of dynamics
 
 
-        parameters
+        attributes
             pdf_state : coddiwomple.states.PDFState
                 the generalized PDFState object representing a parametrizable probability distribution function
             parameter_sequence : iterable
@@ -165,55 +174,59 @@ class ProposalFactory(DistributionFactory):
         super(ProposalFactory, self).__init__(pdf_state, parameter_sequence)
 
         self._propagator = propagator
+        _logger.debug(f"successfully equipped propagator: {self._propagator}")
 
 
-    def generate_initial_sample(self, particle, intial_pdf_state = None, **kwargs):
+    def equip_initial_sample(self, particle, initial_particle_state, generation_pdf = None, **kwargs):
         """
-        Pull an initial i.i.d sample from the pdf_state
+        Equip a particle with an initial particle state.
+            1. update particle state
+            2. update proposal work
+            3. update auxiliary_work
 
         arguments
             particle : coddiwomple.particles.Particle
                 the particle for which to generate an initial sample
-            initial_pdf_state : coddiwomple.states.PDFState
-                inital pdf state from which to pull an i.i.d sample (to which an importance weight will be computed)
+            initial_particle_state : coddiwomple.states.ParticleState
+                the initial particle state to equip
+            generation_pdf : coddiwomple.states.PDFState, default None
+                the pdf that generates the initial particle state;
+                if None, the generation pdf is taken to be self.pdf_state.
 
         return
             initial_work : float
                 the -log(weight_0)
         """
         assert particle._state is None, f"the particle state is not None; it looks like the particle has already been Initialized"
-        if initial_pdf_state is None:
+        if generation_pdf is None:
             self.update_pdf(0)
             generation_pdf = self.pdf_state
         else:
             generation_pdf = initial_pdf_state
 
-        returnable_particle_state = self._generate_initial_sample(generation_pdf, **kwargs)
-        state_reduced_potential = self.pdf_state.reduced_potential(returnable_particle_state)
-        generation_reduced_potential = self.pdf_state.reduced_potential(returnable_particle_state)
+        state_reduced_potential = self.pdf_state.reduced_potential(initial_particle_state)
+        generation_reduced_potential = generation_pdf.reduced_potential(initial_particle_state)
         initial_work = state_reduced_potential - generation_reduced_potential
 
-        particle.update_state(returnable_particle_state) #update the state
+        particle.update_state(initial_particle_state) #update the state
         particle.update_proposal_work(0.) #the initial work has no proposal work contribution
         #particle.update_work(initial_work) #we don't actually want to do this until the resampler says its ok
         particle.update_auxiliary_work(-state_reduced_potential) #we need this variable for the next increment
         return initial_work
 
-    def propagate(self, particle, num_iterations = 1, **kwargs):
+    def propagate(self, particle, **kwargs):
         """
         Propagate a particle's state and update in place
 
         arguments
             particle : coddiwomple.particles.ParticleState
                 the particle to propagate
-            num_iterations : int
-                number of sequential iterations of the propagator move
         """
         #first, update the pdf state
         iteration = len(particle.incremental_works())
         self.update_pdf(iteration)
 
         #then, propagate and update the state/proposal_work
-        state, proposal_work = self._propagator.propagate(particle_state = particle.state(), pdf_state = self.pdf_state, num_iterations = num_iterations, **kwargs)
+        state, proposal_work = self._propagator.apply(particle_state = particle.state(), pdf_state = self.pdf_state, **kwargs)
         particle.update_state(state)
         particle.update_proposal_work(proposal_work)

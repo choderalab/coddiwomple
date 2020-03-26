@@ -31,8 +31,8 @@ class Resampler():
             observable_kwargs : dict, default None
                 observable function kwargs
 
-        parameters
-            resample_log : list
+        attributes
+            _resampling_logger : list
                 list of iterations wherein the particles are resampled
             observable : function, default None
                 function to compute an observable from a list of particles;
@@ -50,33 +50,36 @@ class Resampler():
 
         TODO : add support for variable number of resamples
         """
-        from coddiwomple.utils import add_method
-        self.resample_log = []
+        self._resampling_logger = list()
+        _logger.debug(f"instantiating empty resampling logger")
+        from coddiwomple.utils import dummy_function
 
         #some assertion checks
         if observable is not None:
-            assert type(observable) == type(add_method), f"the observable is not a function"
-            assert type(threshold) == type(add_method), f"the threshold is not a function"
+            assert type(observable) == type(dummy_function), f"the observable is not a function"
+            assert type(threshold) == type(dummy_function), f"the threshold is not a function"
             self.always_resample = False
             self.observable = observable
             self.threshold = threshold
             self.observable_kwargs = observable_kwargs
+            _logger.debug(f"detected observable and threshold as functions; always_resample is set to {self.always_resample}")
         else:
             if any(q is not None for q in [threshold, observable_kwargs]):
                 _logger.warning(f"threshold ({threshold}) and/or observable_kwargs ({observable_kwargs}) is not None but the observable was set to None; defaulting threshold and observable_kwargs to None")
             self.observable, self.threshold, self.observable_kwargs = None, None, None
             self.always_resample = True
+            _logger.debug(f"detected observable as {observable}; always resampling.")
 
     @property
-    def resample_log(self):
-        return copy.deepcopy(self.resample_log)
+    def resampling_logger(self):
+        return copy.deepcopy(self._resampling_logger)
 
     def resample(self, particles, incremental_works, update_particle_indices = True, **kwargs):
         """
         method to wrap the following:
             1. attempt to resample the particles based on observables
             2. resample particles
-            3. increment the resample_log with the current iteration
+            3. increment the _resampling_logger with the current iteration
             4. update particle auxiliary work values
             5. record the state
             6. update the state index
@@ -104,9 +107,9 @@ class Resampler():
             copy_particle_states = [particle.state() for particle in particles]
             copy_particle_indices = [particle.ancestry()[-1] for particle in particles]
 
-            #update the resample_log
+            #update the _resampling_logger
             iteration = len(particles[0].incremental_works())
-            self.resample_log.append(iteration)
+            self._resampling_logger.append(iteration)
 
             for current_particle_index, resampling_particle_index, in enumerate(resampled_indices):
                 #conduct particle updates
@@ -127,7 +130,7 @@ class Resampler():
             6. update the work
             7. update the state index (along with ancestry)
 
-        arguments :
+        arguments
             particle : coddiwomple.particles.Partice
                 the particle to query
             incremental_work : float
@@ -221,8 +224,8 @@ class MultinomialResampler(Resampler):
             observable_kwargs : dict, default None
                 observable function kwargs
 
-        parameters
-            resample_log : list
+        attributes
+            _resampling_logger : list
                 list of iterations wherein the particles are resampled
             observable : function, default None
                 function to compute an observable from a list of particles;

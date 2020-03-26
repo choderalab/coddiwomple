@@ -5,16 +5,24 @@ This module is a consolidation of standard SMC targets, proposals, etc. specific
 
 #####Imports#####
 from coddiwomple.states import ParticleState, PDFState
-from coddiwomple.targets import TargetFactory
-from coddiwomple.proposals import ProposalFactory
-from openmmtools.states import SamplerState, ThermodynamicState, CompoundThermodynamicState, IComposableStates
-from coddiwomple.propagators import MCMCMove
+from coddiwomple.distribution_factories import TargetFactory, ProposalFactory
+from coddiwomple.propagators import Propagator
+from openmmtools.states import SamplerState, ThermodynamicState, CompoundThermodynamicState, IComposableState
 from openmmtools import cache, utils
 from openmmtools import integrators
 from perses.dispersed.utils import check_platform, configure_platform #TODO: make sure this is functional and supports mixed precision
 from simtk import unit
 import simtk.openmm as openmm
 from coddiwomple.openmm_utils import get_dummy_integrator
+from openmmtools.mcmc import BaseIntegratorMove
+from coddiwomple.reporters import Reporter
+import mdtraj.utils as mdtrajutils
+import logging
+
+#####Instantiate Logger#####
+logging.basicConfig(level = logging.NOTSET)
+_logger = logging.getLogger("openmm_adapters")
+_logger.setLevel(logging.DEBUG)
 
 #define the cache
 cache.global_context_cache.platform = configure_platform(utils.get_fastest_platform().getName())
@@ -37,7 +45,7 @@ class OpenMMParticleState(ParticleState, SamplerState):
             box_vectors : np.array(3,3) * unit.nanometers (or velocity units)
                 current box vectors
         """
-        super(OpenMMParticleState, self).__init__(positions = positions, velocities = velocities, box_vectors = box_vectors)
+        super().__init__(positions = positions, velocities = velocities, box_vectors = box_vectors)
 
 #PDFState Adapter
 class OpenMMPDFState(PDFState, CompoundThermodynamicState):
@@ -67,12 +75,14 @@ class OpenMMPDFState(PDFState, CompoundThermodynamicState):
 
         init method is adapted from https://github.com/choderalab/openmmtools/blob/110524bc5079af77d31f5fab464edd7b668ff5ac/openmmtools/states.py#L2766-L2783
         """
+        from openmmtools.alchemy import AlchemicalState
         openmm_pdf_state = ThermodynamicState(system, temperature, pressure)
         alchemical_state = AlchemicalState.from_system(system, **kwargs)
-        assert isinstance(alchemical_state, IComposableStates), f"alchemical state is not an instance of IComposableStates"
+        assert isinstance(alchemical_state, IComposableState), f"alchemical state is not an instance of IComposableState"
         self.__dict__ = openmm_pdf_state.__dict__
         self._composable_states = [alchemical_state]
         self.set_system(self._standard_system, fix_state=True)
+        _logger.debug(f"successfully instantiated OpenMMPDFState equipped with the following parameters: {self._parameters}")
 
     def set_parameters(self, parameters):
         """
@@ -82,9 +92,11 @@ class OpenMMPDFState(PDFState, CompoundThermodynamicState):
             parameters : dict
                 dictionary of variables
         """
-        assert set([param for param in self._parameters.keys() if param is not None]) == set(parameters.keys()), f"the parameter keys supplied do not match the internal parameter names"
+        assert set([param[0] for param in self._parameters.items() if param[1] is not None]) == set(parameters.keys()), f"the parameter keys supplied do not match the internal parameter names"
         for key,val in parameters.items():
+            assert hasattr(self, key), f"{self} does not have a parameter named {key}"
             setattr(self, key, val)
+        _logger.debug(f"successfully updated OpenMMPDFState parameters as follows: {parameters}")
 
     def get_parameters(self):
         """
@@ -105,15 +117,26 @@ class OpenMMTargetFactory(TargetFactory):
     """
     Adapter for TargetFactory
     """
-    def __init__(self, openmm_pdf_state, **kwargs):
+    def __init__(self, pdf_state, parameter_sequence, termination_parameters = None, **kwargs):
         """
-        Initialize the OpenMMTargetFactory
+        Initialize the pdf_state
 
         arguments
-            openmm_pdf_state : OpenMMPDFState
-                thermodynamic state of the targets
+            pdf_state : coddiwomple.states.PDFState
+                the generalized PDFState object representing a parametrizable probability distribution function
+            parameter_sequence : list
+                sequence to parametrize the pdf_state
+            termination_parameters : type(parameter_sequence[0]), default None
+                parameters to trigger a termination
+                if None, then the termination parameters will be defined as parameter_sequence[-1]
+
+        attributes
+            pdf_state : coddiwomple.states.PDFState
+                the generalized PDFState object representing a parametrizable probability distribution function
+            parameter_sequence : iterable
+                sequence to parametrize the pdf_state
         """
-        super(TargetFactory, self).__init__(pdf_state = openmm_pdf_state, **kwargs)
+        super().__init__(pdf_state = pdf_state, parameter_sequence = parameter_sequence, termination_parameters = termination_parameters, **kwargs)
 
 
 #ProposalFactory Adapter
@@ -121,18 +144,34 @@ class OpenMMProposalFactory(ProposalFactory):
     """
     Adapter for ProposalFactory
     """
-    def __init__(self, openmm_pdf_state, **kwargs):
+    def __init__(self, openmm_pdf_state, parameter_sequence, propagator, **kwargs):
         """
         Initialize the OpenMMTargetFactory
 
         arguments
-            openmm_pdf_state : OpenMMPDFState
-                thermodynamic state of the targets
+            pdf_state : coddiwomple.states.OpenMMPDFState
+                the generalized PDFState object representing a parametrizable probability distribution function
+            parameter_sequence : list
+                sequence to parametrize the pdf_state
+            propagator : coddiwomple.propagators.Propagator
+                the propagator of dynamics
+
+
+        attributes
+            pdf_state : coddiwomple.states.PDFState
+                the generalized PDFState object representing a parametrizable probability distribution function
+            parameter_sequence : iterable
+                sequence to parametrize the pdf_state
         """
-        super(ProposalFactory, self).__init__(pdf_state = openmm_pdf_state, **kwargs)
+        super().__init__(pdf_state = openmm_pdf_state, parameter_sequence = parameter_sequence, propagator = propagator, **kwargs)
+
+    def _generate_initial_sample(self, generation_pdf, propagator, particle_state):
+        """
+
+        """
 
 #Propagator Adapter
-class OpenMMBaseIntegratorMove(Propagator, openmmtools.mcmc.BaseIntegratorMove):
+class OpenMMBaseIntegratorMove(Propagator, BaseIntegratorMove):
     """
     Generalized OpenMMTools Integrator Propagator
     """
@@ -145,12 +184,12 @@ class OpenMMBaseIntegratorMove(Propagator, openmmtools.mcmc.BaseIntegratorMove):
         """
         call the BaseIntegratorMove init method
         """
-        super(OpenMMIntegratorPropagator, self).__init__(n_steps = n_steps,
+        super().__init__(n_steps = n_steps,
                                                          context_cache = context_cache,
                                                          reassign_velocities = reassign_velocities,
                                                          n_restart_attempts = n_restart_attempts)
 
-     def apply(self, openmm_pdf_state, particle_state):
+    def apply(self, openmm_pdf_state, particle_state):
         """
         Propagate the state through the integrator.
         This updates the particle_state after the integration. It also logs
@@ -316,14 +355,14 @@ class OpenMMLangevinDynamicsMove(OpenMMBaseIntegratorMove):
 
     def __init__(self, timestep=1.0*unit.femtosecond, collision_rate=10.0/unit.picoseconds,
                  n_steps=1000, reassign_velocities=False, **kwargs):
-        super(OpenMMLangevinDynamicsMove, self).__init__(n_steps=n_steps,
-                                                   reassign_velocities=reassign_velocities,
-                                                   **kwargs)
+        super().__init__(n_steps=n_steps,
+                         reassign_velocities=reassign_velocities,
+                         **kwargs)
         self.timestep = timestep
         self.collision_rate = collision_rate
 
 class OpenMMLangevinDynamicsSplittingMove(OpenMMLangevinDynamicsMove):
-     """
+    """
     Langevin dynamics segment with custom splitting of the operators and optional Metropolized Monte Carlo validation.
     Besides all the normal properties of the :class:`LangevinDynamicsMove`, this class implements the custom splitting
     sequence of the :class:`openmmtools.integrators.LangevinIntegrator`. Additionally, the steps can be wrapped around
@@ -375,24 +414,31 @@ class OpenMMLangevinDynamicsSplittingMove(OpenMMLangevinDynamicsMove):
             Tolerance for constraint solver
     """
 
-    def __init__(self, timestep=1.0 * unit.femtosecond, collision_rate=1.0 / unit.picoseconds,
-                 n_steps=1000, reassign_velocities=False, splitting="V R O R V", constraint_tolerance=1.0e-8,**kwargs):
-        super(LangevinSplittingDynamicsMove, self).__init__(n_steps=n_steps,
-                                                            reassign_velocities=reassign_velocities,
-                                                            timestep=timestep,
-                                                            collision_rate=collision_rate,
-                                                            **kwargs)
+    def __init__(self,
+                 timestep=1.0 * unit.femtosecond,
+                 collision_rate=1.0 / unit.picoseconds,
+                 n_steps=1000,
+                 reassign_velocities=False,
+                 splitting="V R O R V",
+                 constraint_tolerance=1.0e-8,
+                 **kwargs):
+        super().__init__(n_steps=n_steps,
+                         reassign_velocities=reassign_velocities,
+                         timestep=timestep,
+                         collision_rate=collision_rate,
+                         **kwargs)
         self.splitting = splitting
         self.constraint_tolerance = constraint_tolerance
+        _logger.debug(f"successfully initialized an OpenMMLangevinDynamicsSplittingMove")
 
     def __getstate__(self):
-        serialization = super(LangevinSplittingDynamicsMove, self).__getstate__()
+        serialization = super().__getstate__()
         serialization['splitting'] = self.splitting
         serialization['constraint_tolerance'] = self.constraint_tolerance
         return serialization
 
     def __setstate__(self, serialization):
-        super(LangevinSplittingDynamicsMove, self).__setstate__(serialization)
+        super().__setstate__(serialization)
         self.splitting = serialization['splitting']
         self.constraint_tolerance = serialization['constraint_tolerance']
 
@@ -535,3 +581,95 @@ class OpenMMEulerMaruyamaIntegrator(Propagator):
         proposal_work_denominator = -np.sum((old_positions - new_positions - tau * new_force * self.openmm_pdf_state.beta)**2) / (4.0 * tau)
         proposal_work = proposal_work_numerator - proposal_work_denominator
         return proposal_work
+
+class OpenMMReporter(Reporter):
+    """
+    OpenMM specific reporter
+    """
+    def __init__(self,
+                 trajectory_directory,
+                 trajectory_prefix,
+                 topology,
+                 subset_indices = None,
+                 **kwargs):
+        """
+        Initialize the OpenMM particles.
+
+        arguments
+            trajectory_directory : str
+                name of directory
+            trajectory_prefix : str
+                prefix of the files to write
+            topology : simtk.openmm.app.topology.Topology
+                (complete) topology object to which to write
+            subset_indices : list(int)
+                zero-indexed atom indices to write
+        """
+        # equip attributes
+        self.trajectory_directory, self.trajectory_prefix = trajectory_directory, trajectory_prefix
+        self.topology = topology
+        self.hex_dict = {}
+
+        #prepare topology object
+        if self.trajectory_directory is not None and self.trajectory_prefix is not None:
+            _logger.debug(f"creating trajectory storage object...")
+            self.write_traj = True
+            self.neq_traj_filename = os.path.join(os.getcwd(), self.trajectory_directory,
+                                                  f"{self.trajectory_prefix}.neq")
+            os.mkdir(os.path.join(os.getcwd(), self.trajectory_directory))
+            md_topology = md.Topology().from_openmm(self.topology)
+            if self.subset_indices is None:
+                self.md_topology = md_topology
+                self.subset_indices = len([atom for atom in self.md_topology.atoms()])
+            else:
+                self.md_topology = complex_md_topology.md_topology.subset(self.subset_indices)
+                self.subset_indices = subset_indices
+        else:
+            self.write_traj = False
+
+    def record(self, particles, save_to_disk = False, **kwargs):
+        """
+        append the positions, box lengths, and box angles to their respective attributes and save to disk if specified;
+        save to disk if specified
+
+        arguments
+            particles : list(coddiwomple.particles.Particle)
+                list of particle objects
+            save_to_disk : bool, default False
+                whether to save the trajectory to disk
+        """
+        if self.write_traj:
+            for particle in particles:
+                particle_hex = hex(id(particle))
+                if particle_hex in self.hex_dict.keys():
+                    pass
+                else:
+                    self.hex_dict[particle_hex] = [tuple(), tuple(), tuple()]
+
+                self.hex_dict[particle_hex][0].append(particle.state().positions[self.subset_indices, :].value_in_unit_system(unit.md_unit_system))
+                a, b, c, alpha, beta, gamma = mdtrajutils.unitcell.box_vectors_to_lengths_and_angles(*complex_sampler_state.box_vectors)
+                self.hex_dict[particle_hex][1].append([a, b, c])
+                self.hex_dict[particle_hex][2].append([alpha, beta, gamma])
+
+                if save_to_disk:
+                    filename = f"{self.neq_traj_filename}.{particle_hex}.pdb"
+                    self._write_trajectory(self, hex = particle_hex, filename = filename)
+
+    def _write_trajectory(self, hex, filename):
+        """
+        write a trajectory given a filename.
+
+        arguments
+            filename : str
+                name of the file to write
+            hex : str
+                hex memory address
+        """
+
+        traj = md.Trajectory(np.array(self.hex_dict[hex][0]),
+                             unitcell_lengths = np.array(self.hex_dict[hex][1]),
+                             unitcell_angles = np.array(self.hex_dict[hex][2])
+                             )
+        traj.center_coordinates()
+        traj.image_molecules(inplace=True)
+        traj.save(filename)
