@@ -12,23 +12,12 @@ class ParticleState():
     """
     Generalized ParticleState object to hold a particle state x and potentially other attributes
     """
-    def __init__(self, positions, **kwargs):
-        """
-        generalized init method
-
-            arguments
-                positions : np.ndarray
-                    current positions of the state's latent variables
-        """
-        pass
+    pass
 
 class PDFState():
     """
     Generalized PDFState object that defines a parametrizable probability distribution function
     """
-    def __init__(self, **kwargs):
-        pass
-
     def reduced_potential(self, particle_state):
         """
         compute the 'reduced potential energy' of a ParticleState

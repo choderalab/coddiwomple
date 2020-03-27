@@ -10,6 +10,7 @@ from coddiwomple.propagators import Propagator
 from openmmtools.states import SamplerState, ThermodynamicState, CompoundThermodynamicState, IComposableState
 from openmmtools import cache, utils
 from openmmtools import integrators
+from openmmtools.utils import Timer
 from perses.dispersed.utils import check_platform, configure_platform #TODO: make sure this is functional and supports mixed precision
 from simtk import unit
 import simtk.openmm as openmm
@@ -17,6 +18,9 @@ from coddiwomple.openmm_utils import get_dummy_integrator
 from openmmtools.mcmc import BaseIntegratorMove
 from coddiwomple.reporters import Reporter
 import mdtraj.utils as mdtrajutils
+import mdtraj as md
+import os
+import numpy as np
 import logging
 
 #####Instantiate Logger#####
@@ -165,13 +169,9 @@ class OpenMMProposalFactory(ProposalFactory):
         """
         super().__init__(pdf_state = openmm_pdf_state, parameter_sequence = parameter_sequence, propagator = propagator, **kwargs)
 
-    def _generate_initial_sample(self, generation_pdf, propagator, particle_state):
-        """
-
-        """
 
 #Propagator Adapter
-class OpenMMBaseIntegratorMove(Propagator, BaseIntegratorMove):
+class OpenMMBaseIntegratorMove(BaseIntegratorMove, Propagator):
     """
     Generalized OpenMMTools Integrator Propagator
     """
@@ -185,9 +185,10 @@ class OpenMMBaseIntegratorMove(Propagator, BaseIntegratorMove):
         call the BaseIntegratorMove init method
         """
         super().__init__(n_steps = n_steps,
-                                                         context_cache = context_cache,
-                                                         reassign_velocities = reassign_velocities,
-                                                         n_restart_attempts = n_restart_attempts)
+                         context_cache = context_cache,
+                         reassign_velocities = reassign_velocities,
+                         n_restart_attempts = n_restart_attempts)
+        _logger.debug(f"successfully executed {BaseIntegratorMove.__class__.__name__} init.")
 
     def apply(self, openmm_pdf_state, particle_state):
         """
@@ -195,7 +196,7 @@ class OpenMMBaseIntegratorMove(Propagator, BaseIntegratorMove):
         This updates the particle_state after the integration. It also logs
         benchmarking information through the utils.Timer class.
 
-        The only reason we are subclassing this is so that we can pull the heat (i.e. the )
+        The only reason we are subclassing this is so that we can pull the heat.
 
         arguments
             openmm_pdf_state : OpenMMPDFState
@@ -302,7 +303,7 @@ class OpenMMBaseIntegratorMove(Propagator, BaseIntegratorMove):
                                           ignore_collective_variables=False)
         timer.stop("{}: update sampler state".format(move_name))
 
-        proposal_work = -integrator.get_heat()
+        proposal_work = -integrator.get_heat() * openmm_pdf_state.beta
         return particle_state, proposal_work
 
 class OpenMMLangevinDynamicsMove(OpenMMBaseIntegratorMove):
@@ -360,6 +361,7 @@ class OpenMMLangevinDynamicsMove(OpenMMBaseIntegratorMove):
                          **kwargs)
         self.timestep = timestep
         self.collision_rate = collision_rate
+        _logger.debug(f"successfully executed {OpenMMLangevinDynamicsMove.__class__.__name__} init.")
 
 class OpenMMLangevinDynamicsSplittingMove(OpenMMLangevinDynamicsMove):
     """
@@ -415,7 +417,7 @@ class OpenMMLangevinDynamicsSplittingMove(OpenMMLangevinDynamicsMove):
     """
 
     def __init__(self,
-                 timestep=1.0 * unit.femtosecond,
+                 timestep=2.0 * unit.femtosecond,
                  collision_rate=1.0 / unit.picoseconds,
                  n_steps=1000,
                  reassign_velocities=False,
@@ -535,8 +537,6 @@ class OpenMMEulerMaruyamaIntegrator(Propagator):
         #compute the proposal_work
         proposal_work = self._compute_proposal_work(tau, old_positions, new_positions)
 
-
-
         return particle_state, proposal_work
 
     def get_forces(self, positions):
@@ -618,11 +618,11 @@ class OpenMMReporter(Reporter):
                                                   f"{self.trajectory_prefix}.neq")
             os.mkdir(os.path.join(os.getcwd(), self.trajectory_directory))
             md_topology = md.Topology().from_openmm(self.topology)
-            if self.subset_indices is None:
+            if subset_indices is None:
                 self.md_topology = md_topology
-                self.subset_indices = len([atom for atom in self.md_topology.atoms()])
+                self.subset_indices = range(self.topology.getNumAtoms())
             else:
-                self.md_topology = complex_md_topology.md_topology.subset(self.subset_indices)
+                self.md_topology = complex_md_topology.md_topology.subset(subset_indices)
                 self.subset_indices = subset_indices
         else:
             self.write_traj = False
@@ -644,16 +644,16 @@ class OpenMMReporter(Reporter):
                 if particle_hex in self.hex_dict.keys():
                     pass
                 else:
-                    self.hex_dict[particle_hex] = [tuple(), tuple(), tuple()]
+                    self.hex_dict[particle_hex] = [[], [], []]
 
-                self.hex_dict[particle_hex][0].append(particle.state().positions[self.subset_indices, :].value_in_unit_system(unit.md_unit_system))
-                a, b, c, alpha, beta, gamma = mdtrajutils.unitcell.box_vectors_to_lengths_and_angles(*complex_sampler_state.box_vectors)
+                self.hex_dict[particle_hex][0].append(particle.state.positions[self.subset_indices, :].value_in_unit_system(unit.md_unit_system))
+                a, b, c, alpha, beta, gamma = mdtrajutils.unitcell.box_vectors_to_lengths_and_angles(*particle.state.box_vectors)
                 self.hex_dict[particle_hex][1].append([a, b, c])
                 self.hex_dict[particle_hex][2].append([alpha, beta, gamma])
 
                 if save_to_disk:
                     filename = f"{self.neq_traj_filename}.{particle_hex}.pdb"
-                    self._write_trajectory(self, hex = particle_hex, filename = filename)
+                    self._write_trajectory(hex = particle_hex, filename = filename)
 
     def _write_trajectory(self, hex, filename):
         """
@@ -665,11 +665,11 @@ class OpenMMReporter(Reporter):
             hex : str
                 hex memory address
         """
-
-        traj = md.Trajectory(np.array(self.hex_dict[hex][0]),
+        traj = md.Trajectory(xyz = np.array(self.hex_dict[hex][0]),
                              unitcell_lengths = np.array(self.hex_dict[hex][1]),
-                             unitcell_angles = np.array(self.hex_dict[hex][2])
+                             unitcell_angles = np.array(self.hex_dict[hex][2]),
+                             topology = self.md_topology,
                              )
         traj.center_coordinates()
-        traj.image_molecules(inplace=True)
+        #traj.image_molecules(inplace=True)
         traj.save(filename)

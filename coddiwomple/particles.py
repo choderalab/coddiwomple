@@ -8,7 +8,7 @@ class Particle(object):
     """
     Generalized Particle Object to hold particle ancestry, logp_proposal_ratios (i.e. logp(K_reverse/K_forward)), logp_state, incremental, and cumulative works
     """
-    def __init__(self, index, record_states = False, **kwargs):
+    def __init__(self, index, record_states = False, iteration = 0, **kwargs):
         """
         Generalized initialization method for Particle
         arguments
@@ -16,6 +16,8 @@ class Particle(object):
                 integer of the particle initial ancestry
             record_states : bool, default False
                 whether to record the ParticleState history
+            iteration : int, default 0
+                the iteration at which to initialize the particle
 
         parameters
             _cumulative_work : float
@@ -28,6 +30,8 @@ class Particle(object):
                 state of the system
             _record_states : bool, default False
                 whether to record the ParticleState history
+            _iteration : int
+                the iteration of the particle
 
         """
         self._cumulative_work = 0.
@@ -45,115 +49,129 @@ class Particle(object):
         # provision incremental work
         self._auxiliary_work = 0.
 
-        def update_auxiliary_work(self, incremental_work):
-            """
-            update the auxiliary work in place
+        #iteration
+        self._iteration = iteration
 
-            arguments
-                incremental_work : float
-            """
-            self._auxiliary_work += incremental_work
+    def update_auxiliary_work(self, incremental_work):
+        """
+        update the auxiliary work in place
 
-        def zero_auxiliary_work(self):
-            """
-            reset the auxiliary work to 0.
-            """
-            self._auxiliary_work = 0.
+        arguments
+            incremental_work : float
+        """
+        self._auxiliary_work += incremental_work
 
-        def update_work(self, incremental_work):
-            """
-            update the cumulative work and log the increment
+    def zero_auxiliary_work(self):
+        """
+        reset the auxiliary work to 0.
+        """
+        self._auxiliary_work = 0.
 
-            arguments
-                incremental_work : float
-                    incremental work
-                reset_provisional_work : bool, default True
-                    whether to reset the _provisional_incremental_work
-            """
-            self._cumulative_work += incremental_work
-            self._incremental_works.append(incremental_work)
+    def update_work(self, incremental_work):
+        """
+        update the cumulative work and log the increment
 
-        def get_last_proposal_work(self):
-            """
-            return
-                last_proposal_work : float
-                    self._proposal_works[-1]
-            """
-            last_proposal_work = self._proposal_works[-1]
-            return last_proposal_work
+        arguments
+            incremental_work : float
+                incremental work
+            reset_provisional_work : bool, default True
+                whether to reset the _provisional_incremental_work
+        """
+        self._cumulative_work += incremental_work
+        self._incremental_works.append(incremental_work)
 
-        def update_proposal_work(self, proposal_work):
-            """
-            update the proposal_work
+    def get_last_proposal_work(self):
+        """
+        return
+            last_proposal_work : float
+                self._proposal_works[-1]
+        """
+        last_proposal_work = self._proposal_works[-1]
+        return last_proposal_work
 
-            arguments
-                proposal_work : float
-                    -log(proposal_weight)
-            """
-            self._proposal_works.append(proposal_work)
+    def update_proposal_work(self, proposal_work):
+        """
+        update the proposal_work
 
-        def update_proposal_work_in_place(self, proposal_work):
-            """
-            update the proposal_work in place
+        arguments
+            proposal_work : float
+                -log(proposal_weight)
+        """
+        self._proposal_works.append(proposal_work)
 
-            arguments
-                proposal_work : float
-                    -log(proposal_weight)
-            """
-            self._proposal_works[-1] = proposal_work
+    def update_proposal_work_in_place(self, proposal_work):
+        """
+        update the proposal_work in place
 
-        def update_ancestry(self, index):
-            """
-            update the ancestry of the particle
+        arguments
+            proposal_work : float
+                -log(proposal_weight)
+        """
+        self._proposal_works[-1] = proposal_work
 
-            arguments
-                index : int
-                    new particle index
-            """
-            self._ancestry.append(index)
+    def update_ancestry(self, index):
+        """
+        update the ancestry of the particle
 
-        def update_state(self, state, amend_state_history = False, state_history_index = -1):
-            """
-            update the state of the particle
+        arguments
+            index : int
+                new particle index
+        """
+        self._ancestry.append(index)
 
-            arguments :
-                state : coddiwomple.states.ParticleState
-                    updated state
-                amend_state_history : bool, default False
-                    whether to modify the state history
-                state_history_index : int
-                    index of the state history to update
+    def update_state(self, state, amend_state_history = False, state_history_index = -1):
+        """
+        update the state of the particle
 
-            NOTE : if self._record_states is False, amend_state_history and state_history_index are not called, nor is a state history update conducted
-            """
-            if self._record_states:
-                if amend_state_history:
-                    self._state_history[state_history_index] = copy.deepcopy(state)
-                else:
-                    self._state_history.append(copy.deepcopy(state))
+        arguments :
+            state : coddiwomple.states.ParticleState
+                updated state
+            amend_state_history : bool, default False
+                whether to modify the state history
+            state_history_index : int
+                index of the state history to update
 
-            self._state = state
+        NOTE : if self._record_states is False, amend_state_history and state_history_index are not called, nor is a state history update conducted
+        """
+        if self._record_states:
+            if amend_state_history:
+                self._state_history[state_history_index] = copy.deepcopy(state)
+            else:
+                self._state_history.append(copy.deepcopy(state))
 
+        self._state = state
 
+    def update_iteration(self, increment = 1):
+        """
+        update the iteration by the increment
 
-        @property
-        def cumulative_work(self):
-            return self._cumulative_work
-        @property
-        def incremental_works(self):
-            return self._incremental_works
-        @property
-        def proposal_works(self):
-            return self._proposal_works
-        @property
-        def state(self):
-            return self._state
-        @property
-        def ancestry(self):
-            return self._ancestry
-        @property
-        def auxiliary_work(self):
-            return self._auxiliary_work
-        @property
-        def state_history(self):
-            return self._state_history
+        arguments
+            increment : int
+                number of increments to update the iteration
+        """
+        self._iteration += increment
+
+    @property
+    def cumulative_work(self):
+        return self._cumulative_work
+    @property
+    def incremental_works(self):
+        return self._incremental_works
+    @property
+    def proposal_works(self):
+        return self._proposal_works
+    @property
+    def state(self):
+        return self._state
+    @property
+    def ancestry(self):
+        return self._ancestry
+    @property
+    def auxiliary_work(self):
+        return self._auxiliary_work
+    @property
+    def state_history(self):
+        return self._state_history
+    @property
+    def iteration(self):
+        return self._iteration

@@ -117,14 +117,14 @@ class TargetFactory(DistributionFactory):
                 the incremental work of the particle at time t
         """
         #first, update the pdf state
-        iteration = len(particle.incremental_works())
+        iteration = particle.iteration
         self.update_pdf(iteration)
 
         #then compute the reduced potential of the current particle state at the current target distribution
-        u_t = self.pdf_state.reduced_potential(particle.state())
+        u_t = self.pdf_state.reduced_potential(particle.state)
 
         #then compute the work
-        state_work = u_t - particle.auxiliary_work()
+        state_work = u_t - particle.auxiliary_work
         proposal_work = particle.proposal_work[-1] if neglect_proposal_work else 0.
         incremental_work = state_work + proposal_work
 
@@ -143,7 +143,7 @@ class TargetFactory(DistributionFactory):
             terminate_bool : bool
                 whether to terminate the particle
         """
-        current_particle_parameters = self.parameter_sequence[len(particle.incremental_works())]
+        current_particle_parameters = self.parameter_sequence[len(particle.incremental_works)]
         terminate_bool = True if current_particle_parameters == self.termination_parameters else False
         return terminate_bool
 
@@ -197,7 +197,7 @@ class ProposalFactory(DistributionFactory):
             initial_work : float
                 the -log(weight_0)
         """
-        assert particle._state is None, f"the particle state is not None; it looks like the particle has already been Initialized"
+        assert particle.state is None, f"the particle state is not None; it looks like the particle has already been Initialized"
         if generation_pdf is None:
             self.update_pdf(0)
             generation_pdf = self.pdf_state
@@ -223,10 +223,46 @@ class ProposalFactory(DistributionFactory):
                 the particle to propagate
         """
         #first, update the pdf state
-        iteration = len(particle.incremental_works())
+        iteration = len(particle.incremental_works)
         self.update_pdf(iteration)
+        _logger.debug(f"propagating at iteration: {iteration}...")
 
         #then, propagate and update the state/proposal_work
-        state, proposal_work = self._propagator.apply(particle_state = particle.state(), pdf_state = self.pdf_state, **kwargs)
+        state, proposal_work = self._propagator.apply(self.pdf_state, particle.state, **kwargs)
         particle.update_state(state)
         particle.update_proposal_work(proposal_work)
+
+    def propagate(self, particle, num_applications = 1, **kwargs):
+        """
+        apply an equipped 'MCMCMove' (possibly determined by an invariant distribution defined by pdf_state (a PDFState)) to a particle_state (i.e. a ParticleState)
+
+        arguments
+            particle : coddiwomple.particles.Particle
+                the particle to propagate
+            num_applications : int, default 1
+                the number of times to sequentially apply
+
+        returns
+            particle : coddiwomple.particles.Particle
+                the updated particle
+            proposal_work : float
+                -log(weight)
+        """
+        #first, update the pdf state
+        iteration = particle.iteration
+        self.update_pdf(iteration)
+        _logger.debug(f"propagating at iteration: {iteration}...")
+
+        _logger.debug(f"propagating {num_applications}...")
+        proposal_work = 0.
+        particle_state = particle.state
+        for i in range(num_applications):
+            _logger.debug(f"applying move iteration {i+1}/{num_applications}...")
+            particle_state, work = self._propagator.apply(self.pdf_state, particle_state, **kwargs)
+            proposal_work += work
+        _logger.debug(f"total accumulated proposal work: {proposal_work}")
+
+        particle.update_state(particle_state)
+        particle.update_proposal_work(proposal_work)
+
+        return particle, proposal_work

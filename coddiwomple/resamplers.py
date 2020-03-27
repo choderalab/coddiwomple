@@ -82,7 +82,9 @@ class Resampler():
             3. increment the _resampling_logger with the current iteration
             4. update particle auxiliary work values
             5. record the state
-            6. update the state index
+            6. update the work
+            7. update the state index
+            8. update the iteration by 1
 
         arguments
             particles : list(coddiwomple.particles.Partice)
@@ -108,7 +110,9 @@ class Resampler():
             copy_particle_indices = [particle.ancestry()[-1] for particle in particles]
 
             #update the _resampling_logger
-            iteration = len(particles[0].incremental_works())
+            iterations = [particle.iteration for particle in particles]
+            assert all(_iter == iterations[0] for _iter in iterations), f"the particles are desynchronized"
+            iteration = iterations[0]
             self._resampling_logger.append(iteration)
 
             for current_particle_index, resampling_particle_index, in enumerate(resampled_indices):
@@ -121,6 +125,8 @@ class Resampler():
         else:
             #then we do not resample the particles
             [self._null_update_particle(particle, incremental_work, **kwargs) for particle, incremental_work in zip(particles, incremental_works)]
+
+        [particle.update_iteration() for particle in particles]
 
 
     def _null_update_particle(self, particle, incremental_work, **kwargs):
