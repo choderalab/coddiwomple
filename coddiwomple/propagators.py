@@ -21,14 +21,11 @@ class Propagator():
         """
         _logger.debug(f"successfully executed {self.__class__.__name__} dummy init.")
 
-    def apply(self, pdf_state, particle_state, **kwargs):
+    def apply(self, particle_state, **kwargs):
         """
         Dummy MCMC move apply method.
 
         arguments
-            pdf_state : coddiwomple.states.PDFState
-                the pdf_state that (may) govern the self._move;
-                the pdf_state should be parametrized properly here
             particle_state : coddiwomple.states.ParticleState
                 the particle state to which we apply the move
 

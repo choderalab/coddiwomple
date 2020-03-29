@@ -1,0 +1,99 @@
+"""
+OpenMM State Adapter Module
+"""
+
+#####Imports#####
+from coddiwomple.states import ParticleState, PDFState
+from openmmtools.states import SamplerState, ThermodynamicState, CompoundThermodynamicState, IComposableState
+import os
+import numpy as np
+import logging
+from simtk import unit
+
+#####Instantiate Logger#####
+logging.basicConfig(level = logging.NOTSET)
+_logger = logging.getLogger("openmm_states")
+_logger.setLevel(logging.DEBUG)
+
+
+#ParticleState Adapter
+class OpenMMParticleState(ParticleState, SamplerState):
+    """
+    ParticleState for openmmtools.states.SamplerState
+    """
+    def __init__(self, positions, velocities = None, box_vectors = None, **kwargs):
+        """
+        create a SamplerState
+
+        parameters
+            positions : np.array(N,3) * unit.nanometers (or length units)
+                positions of state
+            velocities : np.array(N,3) * unit.nanometers / unit.picoseconds (or velocity units)
+                velocities of state
+            box_vectors : np.array(3,3) * unit.nanometers (or velocity units)
+                current box vectors
+        """
+        super().__init__(positions = positions, velocities = velocities, box_vectors = box_vectors)
+
+
+#PDFState Adapter
+class OpenMMPDFState(PDFState, CompoundThermodynamicState):
+    """
+    PDFState for openmmtools.states.CompoundThermodynamicState
+    """
+
+    def __init__(self,
+                 system,
+                 temperature = 300 * unit.kelvin,
+                 pressure = 1.0 * unit.atmosphere,
+                 **kwargs):
+        """
+        Subclass of coddiwomple.states.PDFState that specifically handles openmmtools.states.CompoundThermodynamicStates
+        Init method does the following:
+            1. create a openmmtools.states.ThermodynamicState with the given system, temperature, and pressure
+            2. create an openmmtools.alchemy.AlchemicalState from the given system
+            3. create an openmtools.states.CompoundThermodynamicState 1 and 2
+
+        arguments
+            system : openmm.System
+                system object to wrap
+            temperature : float * unit.kelvin (or temperature units), default 300.0 * unit.kelvin
+                temperature of the system
+            pressure : float * unit.atmosphere (or pressure units), default 1.0 * unit.atmosphere
+                pressure of the system
+
+        init method is adapted from https://github.com/choderalab/openmmtools/blob/110524bc5079af77d31f5fab464edd7b668ff5ac/openmmtools/states.py#L2766-L2783
+        """
+        from openmmtools.alchemy import AlchemicalState
+        openmm_pdf_state = ThermodynamicState(system, temperature, pressure)
+        alchemical_state = AlchemicalState.from_system(system, **kwargs)
+        assert isinstance(alchemical_state, IComposableState), f"alchemical state is not an instance of IComposableState"
+        self.__dict__ = openmm_pdf_state.__dict__
+        self._composable_states = [alchemical_state]
+        self.set_system(self._standard_system, fix_state=True)
+        _logger.debug(f"successfully instantiated OpenMMPDFState equipped with the following parameters: {self._parameters}")
+
+    def set_parameters(self, parameters):
+        """
+        update the pdf_state parameters in place
+
+        arguments
+            parameters : dict
+                dictionary of variables
+        """
+        assert set([param[0] for param in self._parameters.items() if param[1] is not None]) == set(parameters.keys()), f"the parameter keys supplied do not match the internal parameter names"
+        for key,val in parameters.items():
+            assert hasattr(self, key), f"{self} does not have a parameter named {key}"
+            setattr(self, key, val)
+        _logger.debug(f"successfully updated OpenMMPDFState parameters as follows: {parameters}")
+
+    def get_parameters(self):
+        """
+        return the current parameters
+
+        return
+            returnable_dict : dict
+                dictionary of the current parameter names and values {str: float}
+        """
+        returnable_dict = {i:j for i, j in _composable_states[0]._parameters.items() if j is not None}
+        return returnable_dict

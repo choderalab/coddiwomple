@@ -152,13 +152,11 @@ class ProposalFactory(DistributionFactory):
     """
     Manage Proposal probability distributions
     """
-    def __init__(self, pdf_state, parameter_sequence, propagator, **kwargs):
+    def __init__(self, parameter_sequence, propagator, **kwargs):
         """
         Initialize the pdf_state
 
         arguments
-            pdf_state : coddiwomple.states.PDFState
-                the generalized PDFState object representing a parametrizable probability distribution function
             parameter_sequence : list
                 sequence to parametrize the pdf_state
             propagator : coddiwomple.propagators.Propagator
@@ -170,10 +168,13 @@ class ProposalFactory(DistributionFactory):
                 the generalized PDFState object representing a parametrizable probability distribution function
             parameter_sequence : iterable
                 sequence to parametrize the pdf_state
+            _propagator : coddiwomple.propagators.Propagator
+                the propagator of dynamics
         """
         super(ProposalFactory, self).__init__(pdf_state, parameter_sequence)
 
         self._propagator = propagator
+        self.pdf_state = self._propagator.pdf_state
         _logger.debug(f"successfully equipped propagator: {self._propagator}")
 
 
@@ -214,13 +215,15 @@ class ProposalFactory(DistributionFactory):
         particle.update_auxiliary_work(-state_reduced_potential) #we need this variable for the next increment
         return initial_work
 
-    def propagate(self, particle, **kwargs):
+    def propagate(self, particle, n_steps = 1, **kwargs):
         """
         Propagate a particle's state and update in place
 
         arguments
             particle : coddiwomple.particles.ParticleState
                 the particle to propagate
+            n_steps : int, default 1
+                number of steps to increment the propagator
         """
         #first, update the pdf state
         iteration = len(particle.incremental_works)
@@ -228,7 +231,7 @@ class ProposalFactory(DistributionFactory):
         _logger.debug(f"propagating at iteration: {iteration}...")
 
         #then, propagate and update the state/proposal_work
-        state, proposal_work = self._propagator.apply(self.pdf_state, particle.state, **kwargs)
+        state, proposal_work = self._propagator.apply(particle.state, **kwargs)
         particle.update_state(state)
         particle.update_proposal_work(proposal_work)
 
