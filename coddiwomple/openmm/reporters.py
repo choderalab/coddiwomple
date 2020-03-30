@@ -8,7 +8,9 @@ import mdtraj.utils as mdtrajutils
 import mdtraj as md
 import os
 import numpy as np
+from simtk import unit
 import logging
+
 
 #####Instantiate Logger#####
 logging.basicConfig(level = logging.NOTSET)
@@ -22,7 +24,7 @@ class OpenMMReporter(Reporter):
     def __init__(self,
                  trajectory_directory,
                  trajectory_prefix,
-                 topology,
+                 md_topology,
                  subset_indices = None,
                  **kwargs):
         """
@@ -33,15 +35,15 @@ class OpenMMReporter(Reporter):
                 name of directory
             trajectory_prefix : str
                 prefix of the files to write
-            topology : simtk.openmm.app.topology.Topology
-                (complete) topology object to which to write
+            md_topology : mdtraj.Topology
+                topology to save
             subset_indices : list(int)
                 zero-indexed atom indices to write
         """
         # equip attributes
         self.trajectory_directory, self.trajectory_prefix = trajectory_directory, trajectory_prefix
-        self.topology = topology
         self.hex_dict = {}
+        self.md_topology = md_topology
 
         #prepare topology object
         if self.trajectory_directory is not None and self.trajectory_prefix is not None:
@@ -50,12 +52,9 @@ class OpenMMReporter(Reporter):
             self.neq_traj_filename = os.path.join(os.getcwd(), self.trajectory_directory,
                                                   f"{self.trajectory_prefix}.neq")
             os.mkdir(os.path.join(os.getcwd(), self.trajectory_directory))
-            md_topology = md.Topology().from_openmm(self.topology)
             if subset_indices is None:
-                self.md_topology = md_topology
-                self.subset_indices = range(self.topology.getNumAtoms())
+                self.subset_indices = range(self.md_topology.n_atoms)
             else:
-                self.md_topology = complex_md_topology.md_topology.subset(subset_indices)
                 self.subset_indices = subset_indices
         else:
             self.write_traj = False

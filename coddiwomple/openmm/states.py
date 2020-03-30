@@ -5,6 +5,7 @@ OpenMM State Adapter Module
 #####Imports#####
 from coddiwomple.states import ParticleState, PDFState
 from openmmtools.states import SamplerState, ThermodynamicState, CompoundThermodynamicState, IComposableState
+from openmmtools.alchemy import AlchemicalState
 import os
 import numpy as np
 import logging
@@ -44,6 +45,7 @@ class OpenMMPDFState(PDFState, CompoundThermodynamicState):
 
     def __init__(self,
                  system,
+                 alchemical_composability = AlchemicalState,
                  temperature = 300 * unit.kelvin,
                  pressure = 1.0 * unit.atmosphere,
                  **kwargs):
@@ -57,6 +59,8 @@ class OpenMMPDFState(PDFState, CompoundThermodynamicState):
         arguments
             system : openmm.System
                 system object to wrap
+            alchemical_composability : openmmtools.alchemy.AlchemicalState (super), default openmmtools.alchemy.AlchemicalState
+                the class holding the method `from_system` which can compose an alchemical state with exposed parameters from a system
             temperature : float * unit.kelvin (or temperature units), default 300.0 * unit.kelvin
                 temperature of the system
             pressure : float * unit.atmosphere (or pressure units), default 1.0 * unit.atmosphere
@@ -66,7 +70,7 @@ class OpenMMPDFState(PDFState, CompoundThermodynamicState):
         """
         from openmmtools.alchemy import AlchemicalState
         openmm_pdf_state = ThermodynamicState(system, temperature, pressure)
-        alchemical_state = AlchemicalState.from_system(system, **kwargs)
+        alchemical_state = alchemical_composability.from_system(system, **kwargs)
         assert isinstance(alchemical_state, IComposableState), f"alchemical state is not an instance of IComposableState"
         self.__dict__ = openmm_pdf_state.__dict__
         self._composable_states = [alchemical_state]

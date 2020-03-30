@@ -24,6 +24,9 @@ _logger.setLevel(logging.DEBUG)
 #define the cache
 cache.global_context_cache.platform = configure_platform(utils.get_fastest_platform().getName())
 
+#constants
+_OPENMM_ENERGY_UNIT = unit.kilojoules_per_mole
+
 #Propagator Adapter
 class OpenMMBaseIntegrationPropagator(mcmc.BaseIntegratorMove, Propagator):
     """
@@ -65,11 +68,12 @@ class OpenMMBaseIntegrationPropagator(mcmc.BaseIntegratorMove, Propagator):
             reassign_velocities : bool
             n_restart_attempts : int or None
         """
-        super().__init__(context_cache = context_cache,
+        super().__init__(n_steps = None,
+                         context_cache = context_cache,
                          reassign_velocities = reassign_velocities,
                          n_restart_attempts = n_restart_attempts)
 
-        _logger.debug(f"successfully executed {BaseIntegratorMove.__class__.__name__} init.")
+        _logger.debug(f"successfully executed {mcmc.BaseIntegratorMove.__class__.__name__} init.")
 
         self.pdf_state = openmm_pdf_state
 
@@ -79,13 +83,20 @@ class OpenMMBaseIntegrationPropagator(mcmc.BaseIntegratorMove, Propagator):
         else:
             context_cache = self.context_cache
 
-        # Create context.
+        # Create context and reset integrator for good measure
         self.context, self.integrator = context_cache.get_context(self.pdf_state, integrator)
         self.integrator.reset()
+
         _logger.debug(f"successfully equipped integrator: {self.integrator.__class__.__name__}")
         _logger.debug(f"integrator printable: {self.integrator.pretty_print()}")
 
-    def apply(self, particle_state, n_steps = 1, reset_integrator = False, **kwargs):
+    def apply(self,
+              particle_state,
+              n_steps = 1,
+              reset_integrator = False,
+              return_state_work = False,
+              return_proposal_work = False,
+              **kwargs):
         """
         Propagate the state through the integrator.
         This updates the particle_state after the integration. It also logs
@@ -98,12 +109,17 @@ class OpenMMBaseIntegrationPropagator(mcmc.BaseIntegratorMove, Propagator):
                 number of steps to apply to the integrator
             reset_integrator : bool, default False
                 whether to reset the integrator
+            return_state_work : bool, default False
+                whether to return the state work at the end of the application
+            return_proposal_work : bool, default False
+                whether to return the proposal work at the end of the application
+
 
         returns
             particle_state : OpenMMParticleState
                 The state to apply the move to. This is modified.
-            proposal_work : float
-                log ratio of the forward to reverse proposal kernels
+            returnable_dict : dict
+                dictionary of variables asked to return in returnables
 
         see also
             openmmtools.utils.Timer
@@ -126,18 +142,19 @@ class OpenMMBaseIntegrationPropagator(mcmc.BaseIntegratorMove, Propagator):
             self._before_integration(**kwargs)
 
             try:
-                for _ in range(self.n_steps):
-                    integrator.step(1)
+                for _ in range(n_steps):
+                    self.integrator.step(1)
                     self._during_integration(**kwargs)
-            except Exception:
+            except Exception as e:
                 # Catches particle positions becoming nan during integration.
+                _logger.warning(f"Exception raised: {e}")
                 restart = True
             else:
                 # We get also velocities here even if we don't need them because we
                 # will recycle this State to update the sampler state object. This
                 # way we won't need a second call to Context.getState().
-                context_state = context.getState(getPositions=True, getVelocities=True, getEnergy=True,
-                                                 enforcePeriodicBox=openmm_pdf_state.is_periodic)
+                context_state = self.context.getState(getPositions=True, getVelocities=True, getEnergy=True,
+                                                 enforcePeriodicBox=self.pdf_state.is_periodic)
 
                 # Check for NaNs in energies.
                 potential_energy = context_state.getPotentialEnergy()
@@ -151,18 +168,17 @@ class OpenMMBaseIntegrationPropagator(mcmc.BaseIntegratorMove, Propagator):
                 # If we are on our last chance before crash, try to re-initialize context
                 if attempt_counter == self.n_restart_attempts - 1:
                     _logger.error(err_msg + ' Trying to reinitialize Context as a last-resort restart attempt...')
-                    context.reinitialize()
-                    particle_state.apply_to_context(context)
-                    openmm_pdf_state.apply_to_context(context)
+                    self.context.reinitialize()
+                    particle_state.apply_to_context(self.context)
+                    self.pdf_state.apply_to_context(self.context)
                 # If we have hit the number of restart attempts, raise an exception.
                 elif attempt_counter == self.n_restart_attempts:
                     # Restore the context to the state right before the integration.
-                    from mcmc import IntegratorMoveError
-                    particle_state.apply_to_context(context)
-                    logger.error(err_msg)
-                    raise IntegratorMoveError(err_msg, self, context)
+                    particle_state.apply_to_context(self.context)
+                    _logger.error(err_msg)
+                    raise mcmc.IntegratorMoveError(err_msg, self, self.context)
                 else:
-                    logger.warning(err_msg + ' Attempting a restart...')
+                    _logger.warning(err_msg + ' Attempting a restart...')
             else:
                 break
 
@@ -170,20 +186,25 @@ class OpenMMBaseIntegrationPropagator(mcmc.BaseIntegratorMove, Propagator):
         self._after_integration(**kwargs)
 
         # Updated sampler state.
-        timer.start("{}: update sampler state".format(move_name))
         # This is an optimization around the fact that Collective Variables are not a part of the State,
         # but are a part of the Context. We do this call twice to minimize duplicating information fetched from
         # the State.
         # Update everything but the collective variables from the State object
         particle_state.update_from_context(context_state, ignore_collective_variables=True)
         # Update only the collective variables from the Context
-        particle_state.update_from_context(context, ignore_positions=True, ignore_velocities=True,
+        particle_state.update_from_context(self.context, ignore_positions=True, ignore_velocities=True,
                                           ignore_collective_variables=False)
-        timer.stop("{}: update sampler state".format(move_name))
 
-        proposal_work = self.integrator.get_proposal_work(dimensionless = True)
+        returnable_dict = {}
+        if return_state_work:
+            returnable_dict['state_work'] = self.integrator.get_state_work(dimensionless = True)
+        if return_proposal_work:
+            returnable_dict['proposal_work'] = self.integrator.get_proposal_work(dimensionless = True)
 
-        return particle_state, proposal_work
+        return particle_state, returnable_dict
+
+    def _get_integrator(self):
+        pass
 
     def _before_integration(self, **kwargs):
         pass
@@ -350,6 +371,7 @@ class OpenMMLangevinIntegrator(integrators.ThermostatedIntegrator):
         self.addGlobalVariable("proposal_work", 0)
         self.addGlobalVariable("old_ke", 0)
         self.addGlobalVariable("new_ke", 0)
+        self.addGlobalVariable("state_work", 0)
 
 
     def reset_proposal_work(self):
@@ -712,7 +734,7 @@ class OpenMMIAAISLangevinIntegrator(OpenMMLangevinIntegrator):
                  temperature=300.0 * unit.kelvin,
                  collision_rate=1.0 / unit.picoseconds,
                  timestep=1.0 * unit.femtoseconds,
-                 splitting="H V R O R V",
+                 splitting="P I H N S V R O R V",
                  constraint_tolerance=1e-8):
         """
         AIS Langevin integrator
@@ -771,7 +793,11 @@ class OpenMMIAAISLangevinIntegrator(OpenMMLangevinIntegrator):
         """dict: The dispatch table step_name -> add_step_function."""
         # TODO use methoddispatch (see yank.utils) when dropping Python 2 support.
         dispatch_table = super()._step_dispatch_table
-        dispatch_table['H'] = (self._add_parameter_perturbation_step, False)
+        dispatch_table['H'] = (self._add_parameter_perturbation_step, False) #update the parameters according to the update functions
+        dispatch_table['P'] = (self._add_old_energy_calculation_step, False) #previous energy computation
+        dispatch_table['N'] = (self._add_new_energy_calculation_step, False) #new energy computation
+        dispatch_table['S'] = (self._add_state_work_calculation_step, False) # compute the updated state work as state_work + (Unew - Uold)
+        dispatch_table['I'] = (self._add_iteration_update_step, False) # compute the updated state iteration
         return dispatch_table
 
 
@@ -808,32 +834,184 @@ class OpenMMIAAISLangevinIntegrator(OpenMMLangevinIntegrator):
         Add alchemical perturbation step, accumulating protocol work.
         TODO: Extend this to be able to handle force groups?
         """
-        # Store initial potential energy
-        self.addComputeGlobal("Uold", "energy")
+        # Update all slaved alchemical parameters
+        self._add_update_alchemical_parameters_step()
 
+    def _add_old_energy_calculation_step(self):
+        """
+        add step to compute 'Uold'
+        """
+        self.addComputeGlobal('Uold', 'energy')
+
+    def _add_new_energy_calculation_step(self):
+        """
+        add step to compute 'Unew'
+        """
+        self.addComputeGlobal('Unew', 'energy')
+
+    def _add_state_work_calculation_step(self):
+        """
+        add step to compute 'state_work'
+        """
+        self.addComputeGlobal('state_work', 'state_work + (Unew - Uold)')
+
+    def _add_iteration_update_step(step):
+        """
+        add a step to update the iteration
+        """
         # Update lambda and increment that tracks updates.
         self.addComputeGlobal('iteration', 'iteration + 1.0')
 
         # Update the fractional iteration
         self.addComputeGlobal('fractional_iteration', 'iteration / niterations')
 
-        # Update all slaved alchemical parameters
-        self._add_update_alchemical_parameters_step()
-
-        # Accumulate protocol work
-        self.addComputeGlobal("Unew", "energy")
-        self.addComputeGlobal("proposal_work", "proposal_work + (Unew-Uold)")
 
     def reset(self):
         super().reset()
         self.setGlobalVariableByName('proposal_work', 0.0)
         self.setGlobalVariableByName('iteration', 0.0)
         self.setGlobalVariableByName('fractional_iteration', 0.0)
+        self.setGlobalVariableByName('state_work', 0.0)
 
-class OpenMMEulerMaruyamaIntegrator(OpenMMLangevinIntegrator):
-    """
+    def get_proposal_work(self, dimensionless=True):
+        """Get the current accumulated proposal_work.
 
+        arguments
+            dimensionless : bool, optional, default True
+               If specified, the work is returned in reduced (kT) unit.
+
+        returns
+            work : unit.Quantity or float
+               If dimensionless=True, the proposal work in kT (float).
+               Otherwise, the unit-bearing proposal in units of energy.
+        """
+        return self._get_energy_with_units("proposal_work", dimensionless=dimensionless)
+
+    def get_state_work(self, dimensionless = True):
+        """Get the current accumulated state work.
+
+        arguments
+            dimensionless : bool, optional, default True
+               If specified, the work is returned in reduced (kT) unit.
+
+        returns
+            work : unit.Quantity or float
+               If dimensionless=True, the proposal work in kT (float).
+               Otherwise, the unit-bearing proposal in units of energy.
+        """
+        return self._get_energy_with_units("state_work", dimensionless=dimensionless)
+
+    def set_state_work(self, work):
+        """
+        set the current accumulated state work
+
+        arguments
+            work : float (in units kT)
+        """
+        self.setGlobalVariableByName('state_work', (work * self.kT).value_in_unit(_OPENMM_ENERGY_UNIT))
+
+    def set_proposal_work(self, work):
+        """
+        set the current accumulated proposal work
+
+        arguments
+            work : float (in units kT)
+        """
+        self.setGlobalVariableByName('proposal_work', (work * self.kT).value_in_unit(_OPENMM_ENERGY_UNIT))
+
+
+class OpenMMIAEulerMaruyamaIntegrator(OpenMMIAAISLangevinIntegrator):
     """
+    Internal Action Euler Maruyama Integrator.
+    Adds 'E' to the dispatch table, which executes an Euler-Maruyama move.
+    Interestingly, the Euler-Maruyama integration scheme is the first scheme I'm aware of that avoids any and all complications
+    associated with a running velocity in the forward/reverse kernel.
+
+    The update scheme works as follows:
+        x_(k+1) = x_k + (tau) * force(x_k | parameters) * beta + sqrt(2*(tau)) * R(t)
+        where:
+            force(x_k | parameters) = -grad(openmm_pdf_state),
+            tau = D * dt; [tau] = positions_unit ** 2
+            D = 1 / (openmm_pdf_state.beta * 2 * mass_vector); [D] = velocity_unit ** 2
+    """
+    def __init__(openmm_pdf_update_functions,
+                 n_steps,
+                 temperature=300.0 * unit.kelvin,
+                 collision_rate=1.0 / unit.picoseconds,
+                 timestep=1.0 * unit.femtoseconds,
+                 splitting="P I H N S V R O R V",
+                 constraint_tolerance=1e-8):
+
+        super().__init__(openmm_pdf_update_functions,
+                         n_steps,
+                         temperature=300.0 * unit.kelvin,
+                         collision_rate=1.0 / unit.picoseconds,
+                         timestep=1.0 * unit.femtoseconds,
+                         splitting="P I H N S V R O R V",
+                         constraint_tolerance=1e-8)
+
+        self.addPerDofVariable('x_EM_old', 0.)
+        self.addPerDofVariable('x_EM_new', 0.)
+        self.addPerDofVariable('f_EM_old', 0.)
+        self.addPerDofVariable('f_EM_new', 0.)
+        self.addPerDofVariable('gaussian_fract', 0)
+
+
+
+    @property
+    def _step_dispatch_table(self):
+        """dict: The dispatch table step_name -> add_step_function."""
+        # TODO use methoddispatch (see yank.utils) when dropping Python 2 support.
+        dispatch_table = super()._step_dispatch_table
+        dispatch_table['E'] = (self._add_euler_maruyama_update, False)
+        return dispatch_table
+
+    def _add_integrator_steps(self):
+        """
+        Add the steps to the integrator--this can be overridden to place steps around the integration.
+        We update this in the Euler-Maruyama regime because we need to add the diffusion constant D and the update constant tau.
+        """
+        # Integrate
+        self.addUpdateContextState()
+        self.addComputeTemperatureDependentConstants({"sigma": "sqrt(kT/m)",
+                                                      "D" : "kT/(2.0 * m)",
+                                                      "tau": "D * dt"})
+
+        for i, step in enumerate(self._splitting.split()):
+            self._substep_function(step)
+
+    def _add_euler_maruyama_update(self):
+        """
+                dx_grad = tau * force * self.openmm_pdf_state.beta #this is the incremental x update from the gradient of the distribution
+
+                #now we add the stochastic part
+                dx_stochastic = np.random.randn(self.mass_vector.shape[1], 3) * np.sqrt(2 * tau.value_in_unit(self.x_unit**2)) * unit.x_unit
+
+                #combine them...
+                dx = dx_grad + dx_stochastic
+
+                proposal_work_numerator = -np.sum((new_positions - old_positions - tau * old_force * self.openmm_pdf_state.beta)**2) / (4.0 * tau)
+                proposal_work_denominator = -np.sum((old_positions - new_positions - tau * new_force * self.openmm_pdf_state.beta)**2) / (4.0 * tau)
+        """
+        # update positions (and velocities, if there are constraints)
+        n_R = self._ORV_counts['R']
+        self.addComputePerDof("x", "x + (tau * f / (kT * {}) + (gaussian * sqrt(2.0 * tau))".format(n_R)) #full Euler-Maruyama update
+        self.addComputePerDof("x1", "x")  # save pre-constraint positions in x1
+        self.addConstrainPositions()  # x is now constrained
+        self.addComputePerDof("v", "v + ((x - x1) / (dt / {}))".format(n_R))
+        self.addConstrainVelocities()
+
+    def _add_global_variables(self):
+        """Add the appropriate global parameters to the CustomIntegrator. nsteps refers to the number of
+        total steps in the protocol.
+        Parameters
+        ----------
+        nsteps : int, greater than 0
+            The number of steps in the switching protocol.
+        """
+        super()._add_global_variables()
+        self.addGlobalVariable('Uold', 0) #
+
 
 
 
