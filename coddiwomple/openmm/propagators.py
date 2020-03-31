@@ -855,7 +855,7 @@ class OpenMMIAAISLangevinIntegrator(OpenMMLangevinIntegrator):
         """
         self.addComputeGlobal('state_work', 'state_work + (Unew - Uold)')
 
-    def _add_iteration_update_step(step):
+    def _add_iteration_update_step(self):
         """
         add a step to update the iteration
         """
