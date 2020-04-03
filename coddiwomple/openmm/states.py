@@ -99,5 +99,5 @@ class OpenMMPDFState(PDFState, CompoundThermodynamicState):
             returnable_dict : dict
                 dictionary of the current parameter names and values {str: float}
         """
-        returnable_dict = {i:j for i, j in _composable_states[0]._parameters.items() if j is not None}
+        returnable_dict = {i:j for i, j in self._composable_states[0]._parameters.items() if j is not None}
         return returnable_dict

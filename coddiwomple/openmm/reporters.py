@@ -59,7 +59,13 @@ class OpenMMReporter(Reporter):
         else:
             self.write_traj = False
 
-    def record(self, particles, save_to_disk = False, **kwargs):
+        self.hex_to_index = {}
+        self.hex_counter = 0
+
+    def record(self,
+               particles,
+               save_to_disk = False,
+               **kwargs):
         """
         append the positions, box lengths, and box angles to their respective attributes and save to disk if specified;
         save to disk if specified
@@ -77,6 +83,8 @@ class OpenMMReporter(Reporter):
                     pass
                 else:
                     self.hex_dict[particle_hex] = [[], [], []]
+                    self.hex_to_index[particle_hex] = self.hex_counter
+                    self.hex_counter += 1
 
                 self.hex_dict[particle_hex][0].append(particle.state.positions[self.subset_indices, :].value_in_unit_system(unit.md_unit_system))
                 a, b, c, alpha, beta, gamma = mdtrajutils.unitcell.box_vectors_to_lengths_and_angles(*particle.state.box_vectors)
@@ -84,7 +92,7 @@ class OpenMMReporter(Reporter):
                 self.hex_dict[particle_hex][2].append([alpha, beta, gamma])
 
                 if save_to_disk:
-                    filename = f"{self.neq_traj_filename}.{particle_hex}.pdb"
+                    filename = f"{self.neq_traj_filename}.{format(self.hex_to_index[particle_hex], '04')}.pdb"
                     self._write_trajectory(hex = particle_hex, filename = filename)
 
     def _write_trajectory(self, hex, filename):
@@ -105,3 +113,10 @@ class OpenMMReporter(Reporter):
         traj.center_coordinates()
         #traj.image_molecules(inplace=True)
         traj.save(filename)
+
+    def reset(self):
+        """
+        reset self.hex_dict
+        """
+        self.hex_dict = {}
+        self.hex_to_index = {}
