@@ -667,11 +667,11 @@ class OpenMMIAEulerMaruyamaIntegrator(OMMLIAIS):
 
         super().__init__(openmm_pdf_update_functions,
                          n_steps,
-                         temperature=300.0 * unit.kelvin,
-                         collision_rate=1.0 / unit.picoseconds,
-                         timestep=1.0 * unit.femtoseconds,
-                         splitting="P I H N S V R O R V",
-                         constraint_tolerance=1e-8)
+                         temperature=temperature,
+                         collision_rate=collision_rate,
+                         timestep=timestep,
+                         splitting=splitting,
+                         constraint_tolerance=constraint_tolerance)
 
         self.addPerDofVariable('x_EM_old', 0.)
         self.addPerDofVariable('x_EM_new', 0.)

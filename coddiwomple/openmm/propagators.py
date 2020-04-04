@@ -14,6 +14,7 @@ from coddiwomple.openmm.utils import get_dummy_integrator
 import os
 import numpy as np
 import logging
+from copy import deepcopy
 
 #####Instantiate Logger#####
 logging.basicConfig(level = logging.NOTSET)
@@ -33,7 +34,7 @@ class OMMBIP(mcmc.BaseIntegratorMove, Propagator):
                  integrator,
                  context_cache=None,
                  reassign_velocities=False,
-                 n_restart_attempts=4):
+                 n_restart_attempts=0):
 
         """
         call the BaseIntegratorMove init method
@@ -130,7 +131,7 @@ class OMMBIP(mcmc.BaseIntegratorMove, Propagator):
             # If we reassign velocities, we can ignore the ones in particle_state.
             particle_state.apply_to_context(self.context, ignore_velocities=self.reassign_velocities)
             if self.reassign_velocities:
-                self.context.setVelocitiesToTemperature(openmm_pdf_state.temperature)
+                self.context.setVelocitiesToTemperature(self.pdf_state.temperature)
 
             # Subclasses may implement _before_integration().
             self._before_integration(particle_state,
@@ -171,6 +172,7 @@ class OMMBIP(mcmc.BaseIntegratorMove, Propagator):
                 if attempt_counter == self.n_restart_attempts - 1:
                     _logger.error(err_msg + ' Trying to reinitialize Context as a last-resort restart attempt...')
                     self.context.reinitialize()
+                    self.integrator.reset()
                     particle_state.apply_to_context(self.context)
                     self.pdf_state.apply_to_context(self.context)
                 # If we have hit the number of restart attempts, raise an exception.
@@ -248,9 +250,6 @@ class OMMBIP(mcmc.BaseIntegratorMove, Propagator):
         pass
 
 
-
-
-
 class OMMAISP(OMMBIP):
     """
     OpenMM Annealed Importance Sampling Propagator
@@ -266,7 +265,7 @@ class OMMAISP(OMMBIP):
                  record_state_work_interval = None,
                  context_cache=None,
                  reassign_velocities=False,
-                 n_restart_attempts=4):
+                 n_restart_attempts=0):
         """
         see super
 
@@ -278,16 +277,17 @@ class OMMAISP(OMMBIP):
 
         super().__init__(openmm_pdf_state,
                          integrator,
-                         context_cache=None,
-                         reassign_velocities=False,
-                         n_restart_attempts=4)
+                         context_cache=context_cache,
+                         reassign_velocities=reassign_velocities,
+                         n_restart_attempts=n_restart_attempts)
 
         #and there is one more validation that has to happen...
         pdf_state_parameters = list(self.pdf_state.get_parameters().keys())
         function_parameters = self.integrator._function_parameters
         assert set(pdf_state_parameters) == set(function_parameters), f"the pdf_state parameters ({pdf_state_parameters}) is not equal to the function parameters ({function_parameters})"
         self._record_state_work_interval = record_state_work_interval
-        self.state_work = []
+        self._state_works = {}
+        self._state_works_counter = 0
 
     def _before_integration(self, *args, **kwargs):
         """
@@ -295,8 +295,9 @@ class OMMAISP(OMMBIP):
         """
         context_parameters = self._get_context_parameters()
         _logger.debug(f"\tcontext_parameters before integration: {context_parameters}")
+        self._current_state_works = []
         if self._record_state_work_interval is not None:
-            self.state_work.append(0.0)
+            self._current_state_works.append(0.0)
 
     def _during_integration(self, *args, **kwargs):
         """
@@ -306,7 +307,7 @@ class OMMAISP(OMMBIP):
             integrator_variables = self._get_global_integrator_variables()
             iteration = integrator_variables['iteration']
             if iteration % self._record_state_work_interval == 0:
-                self.state_work.append(self.integrator.get_state_work())
+                self._current_state_works.append(self.integrator.get_state_work())
 
 
     def _after_integration(self, *args, **kwargs):
@@ -323,9 +324,14 @@ class OMMAISP(OMMBIP):
             if iteration % self._record_state_work_interval == 0:
                 pass #do not record if the state work was recorded at the last `_during_integration` pass
             else:
-                self.state_work.append(self.integrator.get_state_work())
+                self._current_state_works.append(self.integrator.get_state_work())
         else:
-            self.state_work.append(self.integrator.get_state_work())
+            self._current_state_works.append(self.integrator.get_state_work())
+
+        self._state_works[self._state_works_counter] = deepcopy(self._current_state_works)
+        self._state_works_counter += 1
+
+
 
 class OMMAISVP(OMMAISP):
     """
@@ -339,14 +345,14 @@ class OMMAISVP(OMMAISP):
                  record_state_work_interval = None,
                  context_cache=None,
                  reassign_velocities=False,
-                 n_restart_attempts=4):
+                 n_restart_attempts=0):
 
         super().__init__(openmm_pdf_state,
                          integrator,
-                         record_state_work_interval = None,
-                         context_cache=None,
-                         reassign_velocities=False,
-                         n_restart_attempts=4)
+                         record_state_work_interval = record_state_work_interval,
+                         context_cache=context_cache,
+                         reassign_velocities=reassign_velocities,
+                         n_restart_attempts=n_restart_attempts)
 
     def _before_integration(self, *args, **kwargs):
         super()._before_integration(*args, **kwargs)
@@ -387,7 +393,7 @@ class OMMAISPR(OMMAISP):
                  trajectory_write_interval = 1,
                  context_cache=None,
                  reassign_velocities=False,
-                 n_restart_attempts=4):
+                 n_restart_attempts=0):
         """
         see super (i.e. OMMAISP)
 
@@ -397,25 +403,28 @@ class OMMAISPR(OMMAISP):
             trajectory_write_interval : int, default 1
                 write the trajectory every trajectory_write_interval intervals
         """
-        from coddiwomple.particles import Particle
-        super().__init__(openmm_pdf_state,
-                         integrator,
-                         context_cache=None,
-                         reassign_velocities=False,
-                         n_restart_attempts=4)
+        super().__init__(openmm_pdf_state = openmm_pdf_state,
+                         integrator = integrator,
+                         record_state_work_interval = record_state_work_interval,
+                         context_cache=context_cache,
+                         reassign_velocities=reassign_velocities,
+                         n_restart_attempts=n_restart_attempts)
 
         self._write_trajectory = False if reporter is None else True
         self.reporter = reporter
-        self.particle = Particle(index = 0, iteration = 0)
+        self.particle = None
         self._trajectory_write_interval = trajectory_write_interval if self._write_trajectory else None
 
     def _before_integration(self, *args, **kwargs):
         """
         update the particle with the particle state
         """
+        from coddiwomple.particles import Particle
         super()._before_integration(*args, **kwargs)
         particle_state = args[0]
+        self.particle = Particle(index = 0, iteration = 0)
         if self._write_trajectory:
+            particle_state.update_from_context(self.context, ignore_velocities=True)
             self.particle.update_state(particle_state)
             self.reporter.record([self.particle])
 
@@ -428,8 +437,17 @@ class OMMAISPR(OMMAISP):
         if self._write_trajectory:
             integrator_variables = self._get_global_integrator_variables()
             iteration = integrator_variables['iteration']
+            n_iterations = integrator_variables['niterations']
             if iteration % self._trajectory_write_interval == 0:
-                self.reporter.record([self.particle])
+                particle_state.update_from_context(self.context, ignore_velocities=True)
+                if iteration == n_iterations:
+                    try:
+                        self.reporter.record([self.particle], save_to_disk=True)
+                    except Exception as e:
+                        _logger.warning(f"{e}")
+                    self.reporter.reset()
+                else:
+                    self.reporter.record([self.particle])
 
     def _after_integration(self, *args, **kwargs):
         """
@@ -438,6 +456,7 @@ class OMMAISPR(OMMAISP):
         super()._after_integration(*args, **kwargs)
         particle_state = args[0]
         if self._write_trajectory:
+            particle_state.update_from_context(self.context, ignore_velocities=True)
             integrator_variables = self._get_global_integrator_variables()
             iteration = integrator_variables['iteration']
             if iteration % self._trajectory_write_interval == 0:

@@ -25,14 +25,14 @@ hybrid_positions = factory.hybrid_positions
 
 from coddiwomple.openmm.states import OpenMMParticleState, OpenMMPDFState
 from coddiwomple.openmm.propagators import *
-
+from coddiwomple.openmm.integrators import *
 
 # In[ ]:
 
 
 from perses.annihilation.lambda_protocol import RelativeAlchemicalState
 particle_state = OpenMMParticleState(positions = hybrid_positions, box_vectors = np.array(hybrid_system.getDefaultPeriodicBoxVectors()))
-pdf_state = OpenMMPDFState(system = hybrid_system, alchemical_composability = RelativeAlchemicalState, pressure=1.0 * unit.atmosphere)
+pdf_state = OpenMMPDFState(system = hybrid_system, alchemical_composability = RelativeAlchemicalState, pressure=None)
 
 
 # the parameters are non-canonical...let's check how perses typically handles these...
@@ -40,13 +40,12 @@ pdf_state = OpenMMPDFState(system = hybrid_system, alchemical_composability = Re
 # In[ ]:
 
 
-langevin_integrator = OpenMMLangevinIntegrator(temperature = pdf_state.temperature, timestep = 2.0 * unit.femtoseconds)
+langevin_integrator = OMMLI(temperature = pdf_state.temperature, timestep = 2.0 * unit.femtoseconds)
 
 
 # In[ ]:
 
-
-endstate_propagator = OpenMMBaseIntegrationPropagator(openmm_pdf_state = pdf_state, integrator = langevin_integrator)
+endstate_propagator = OMMBIP(openmm_pdf_state = pdf_state, integrator = langevin_integrator)
 
 
 # In[ ]:
@@ -55,7 +54,7 @@ endstate_propagator = OpenMMBaseIntegrationPropagator(openmm_pdf_state = pdf_sta
 from coddiwomple.openmm.reporters import OpenMMReporter
 import os
 folder = sys.argv[2]
-reporter = OpenMMReporter(folder, 'solvent', md_topology = factory.hybrid_topology)
+reporter = OpenMMReporter(folder, 'vacuum', md_topology = factory.hybrid_topology)
 
 
 # In[ ]:
@@ -81,10 +80,10 @@ minimize(endstate_propagator.pdf_state, particle_state)
 
 # In[ ]:
 
-
-for i in range(150):
+import tqdm
+for i in tqdm.trange(150):
     print(i)
-    particle_state, _return_dict = endstate_propagator.apply(particle_state, n_steps = 5000)
+    particle_state, _return_dict = endstate_propagator.apply(particle_state, n_steps = 1000)
     reporter.record([particle], save_to_disk=False)
 
 
