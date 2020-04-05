@@ -331,6 +331,13 @@ class OMMAISP(OMMBIP):
         self._state_works[self._state_works_counter] = deepcopy(self._current_state_works)
         self._state_works_counter += 1
 
+    @property
+    def state_works(self):
+        """
+        return state works
+        """
+        return self._state_works
+
 
 
 class OMMAISVP(OMMAISP):

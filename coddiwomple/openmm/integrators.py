@@ -76,7 +76,7 @@ class OMMLI(integrators.ThermostatedIntegrator):
                  timestep=1.0 * unit.femtoseconds,
                  splitting="V R O R V",
                  constraint_tolerance=1e-6,
-                 ):
+                 **kwargs):
         """Create a Langevin integrator with the prescribed operator splitting.
 
         arguments
@@ -459,7 +459,8 @@ class OMMLIAIS(OMMLI):
                  collision_rate=1.0 / unit.picoseconds,
                  timestep=1.0 * unit.femtoseconds,
                  splitting="P I H N S V R O R V",
-                 constraint_tolerance=1e-6):
+                 constraint_tolerance=1e-6,
+                 **kwargs):
         """
         arguments
             openmm_pdf_update_functions : dict
@@ -663,7 +664,8 @@ class OpenMMIAEulerMaruyamaIntegrator(OMMLIAIS):
                  collision_rate=1.0 / unit.picoseconds,
                  timestep=1.0 * unit.femtoseconds,
                  splitting="P I H N S V R O R V",
-                 constraint_tolerance=1e-8):
+                 constraint_tolerance=1e-8,
+                 **kwargs):
 
         super().__init__(openmm_pdf_update_functions,
                          n_steps,

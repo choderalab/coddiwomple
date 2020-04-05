@@ -49,9 +49,12 @@ class OpenMMReporter(Reporter):
         if self.trajectory_directory is not None and self.trajectory_prefix is not None:
             _logger.debug(f"creating trajectory storage object...")
             self.write_traj = True
-            self.neq_traj_filename = os.path.join(os.getcwd(), self.trajectory_directory,
-                                                  f"{self.trajectory_prefix}.neq")
-            os.mkdir(os.path.join(os.getcwd(), self.trajectory_directory))
+            self.neq_traj_dir = os.path.join(os.getcwd(), self.trajectory_directory)
+            self.neq_traj_filename = os.path.join(self.neq_traj_dir, f"{self.trajectory_prefix}")
+
+            if not os.path.isdir(self.neq_traj_dir):
+                os.mkdir(self.neq_traj_dir)
+
             if subset_indices is None:
                 self.subset_indices = range(self.md_topology.n_atoms)
             else:
