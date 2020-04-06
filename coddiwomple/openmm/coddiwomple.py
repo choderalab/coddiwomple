@@ -188,7 +188,11 @@ def annealed_importance_sampling(system,
         pdf_state.set_parameters(reset_pdf_state_parameters)
         particle_state = OpenMMParticleState(positions = traj.xyz[frames[i]] * unit.nanometers, box_vectors = traj.unitcell_vectors[frames[i]]*unit.nanometers)
         particle.update_state(particle_state)
-        _, _return_dict = ais_propagator.apply(particle_state, n_steps = steps_per_application, reset_integrator=True, apply_pdf_to_context=True)
+        try:
+            _, _return_dict = ais_propagator.apply(particle_state, n_steps = steps_per_application, reset_integrator=True, apply_pdf_to_context=True)
+        except Exception as e:
+            print(e)
+
 
     return ais_propagator.state_works
 
