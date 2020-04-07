@@ -152,6 +152,8 @@ class OMMBIP(mcmc.BaseIntegratorMove, Propagator):
                 # Catches particle positions becoming nan during integration.
                 _logger.warning(f"Exception raised: {e}")
                 restart = True
+                context_state = self.context.getState(getPositions=True, getVelocities=True, getEnergy=True,
+                                                 enforcePeriodicBox=self.pdf_state.is_periodic)
             else:
                 # We get also velocities here even if we don't need them because we
                 # will recycle this State to update the sampler state object. This
@@ -179,8 +181,7 @@ class OMMBIP(mcmc.BaseIntegratorMove, Propagator):
                 elif attempt_counter == self.n_restart_attempts:
                     # Restore the context to the state right before the integration.
                     particle_state.apply_to_context(self.context)
-                    _logger.error(err_msg)
-                    raise mcmc.IntegratorMoveError(err_msg, self, self.context)
+                    _logger.warning(err_msg)
                 else:
                     _logger.warning(err_msg + ' Attempting a restart...')
             else:
@@ -293,8 +294,6 @@ class OMMAISP(OMMBIP):
         """
         make sure that the context parameters are all 0.0
         """
-        context_parameters = self._get_context_parameters()
-        _logger.debug(f"\tcontext_parameters before integration: {context_parameters}")
         self._current_state_works = []
         if self._record_state_work_interval is not None:
             self._current_state_works.append(0.0)
@@ -309,14 +308,10 @@ class OMMAISP(OMMBIP):
             if iteration % self._record_state_work_interval == 0:
                 self._current_state_works.append(self.integrator.get_state_work())
 
-
     def _after_integration(self, *args, **kwargs):
         """
         make sure that he context parameters are all 1.0
         """
-        context_parameters = self._get_context_parameters()
-        _logger.debug(f"\tcontext_parameters after integration: {context_parameters}")
-
         integrator_variables = self._get_global_integrator_variables()
         iteration = integrator_variables['iteration']
 
