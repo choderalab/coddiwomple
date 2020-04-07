@@ -22,6 +22,7 @@ from perses.annihilation.lambda_protocol import RelativeAlchemicalState
 from simtk import unit
 import tqdm
 import mdtraj as md
+import simtk.openmm.app as app
 
 
 def endstate_equilibration(system,
@@ -64,12 +65,20 @@ def endstate_equilibration(system,
     from perses.dispersed.utils import compute_timeseries
     import mdtraj.utils as mdtrajutils
 
+    #determine pressure
+    forces = {type(force).__name__: force for force in system.getForces()}
+    nonbonded_method = forces['NonbondedForce']
+    if nonbonded_method == app.NoCutoff:
+        pressure = None
+    else:
+        pressure = 1.0 * unit.atmosphere
+
     particle_state = OpenMMParticleState(positions = endstate_positions,
                                          box_vectors =  np.array(system.getDefaultPeriodicBoxVectors()),
                                         )
     pdf_state = OpenMMPDFState(system = system,
                                alchemical_composability = alchemical_composability,
-                               pressure=None)
+                               pressure=pressure)
 
     #set the pdf_state endstate parameters
     pdf_state_parameters = pdf_state.get_parameters()
@@ -154,10 +163,18 @@ def annealed_importance_sampling(system,
         integrator_kwargs : dict, see default
             kwargs to pass to OMMLIAIS integrator
     """
+    #determine pressure
+    forces = {type(force).__name__: force for force in system.getForces()}
+    nonbonded_method = forces['NonbondedForce']
+    if nonbonded_method == app.NoCutoff:
+        pressure = None
+    else:
+        pressure = 1.0 * unit.atmosphere
+
     traj = md.Trajectory.load(endstate_cache_filename)
 
     num_frames = traj.n_frames
-    pdf_state = OpenMMPDFState(system = system, alchemical_composability = alchemical_composability, pressure=None)
+    pdf_state = OpenMMPDFState(system = system, alchemical_composability = alchemical_composability, pressure=pressure)
 
     #set the pdf_state endstate parameters
     pdf_state_parameters = pdf_state.get_parameters()
