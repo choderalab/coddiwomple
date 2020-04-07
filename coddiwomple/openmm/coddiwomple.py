@@ -67,11 +67,11 @@ def endstate_equilibration(system,
 
     #determine pressure
     forces = {type(force).__name__: force for force in system.getForces()}
-    nonbonded_method = forces['NonbondedForce']
-    if nonbonded_method == app.NoCutoff:
-        pressure = None
-    else:
+    if "MonteCarloBarostat" in list(forces.keys()):
         pressure = 1.0 * unit.atmosphere
+    else:
+        pressure = None
+    print(f"pressure: {pressure}")
 
     particle_state = OpenMMParticleState(positions = endstate_positions,
                                          box_vectors =  np.array(system.getDefaultPeriodicBoxVectors()),
@@ -165,11 +165,12 @@ def annealed_importance_sampling(system,
     """
     #determine pressure
     forces = {type(force).__name__: force for force in system.getForces()}
-    nonbonded_method = forces['NonbondedForce']
-    if nonbonded_method == app.NoCutoff:
-        pressure = None
-    else:
+    if "MonteCarloBarostat" in list(forces.keys()):
         pressure = 1.0 * unit.atmosphere
+    else:
+        pressure = None
+
+    print(f"pressure: {pressure}")
 
     traj = md.Trajectory.load(endstate_cache_filename)
 
