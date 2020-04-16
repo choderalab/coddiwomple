@@ -124,8 +124,8 @@ class TargetFactory(DistributionFactory):
         u_t = self.pdf_state.reduced_potential(particle.state)
 
         #then compute the work
-        state_work = u_t - particle.auxiliary_work
-        proposal_work = particle.proposal_work[-1] if neglect_proposal_work else 0.
+        state_work = u_t + particle.auxiliary_work
+        proposal_work = particle.get_last_proposal_work() if neglect_proposal_work else 0.
         incremental_work = state_work + proposal_work
 
         return incremental_work
@@ -143,8 +143,8 @@ class TargetFactory(DistributionFactory):
             terminate_bool : bool
                 whether to terminate the particle
         """
-        current_particle_parameters = self.parameter_sequence[len(particle.incremental_works)]
-        terminate_bool = True if current_particle_parameters == self.termination_parameters else False
+        current_particle_parameters = self.parameter_sequence[particle.iteration]
+        terminate_bool = True if all(current_particle_parameters[key] == self.termination_parameters[key] for key in current_particle_parameters.keys()) else False
         return terminate_bool
 
 
@@ -171,10 +171,9 @@ class ProposalFactory(DistributionFactory):
             _propagator : coddiwomple.propagators.Propagator
                 the propagator of dynamics
         """
-        super(ProposalFactory, self).__init__(pdf_state, parameter_sequence)
+        super(ProposalFactory, self).__init__(propagator.pdf_state, parameter_sequence)
 
         self._propagator = propagator
-        self.pdf_state = self._propagator.pdf_state
         _logger.debug(f"successfully equipped propagator: {self._propagator}")
 
 
@@ -202,38 +201,23 @@ class ProposalFactory(DistributionFactory):
         if generation_pdf is None:
             self.update_pdf(0)
             generation_pdf = self.pdf_state
+            _logger.debug(f"generation_pdf is None; using pdf state as generator pdf")
         else:
             generation_pdf = initial_pdf_state
+            _logger.debug(f"generation_pdf is not None; using as generator")
 
         state_reduced_potential = self.pdf_state.reduced_potential(initial_particle_state)
         generation_reduced_potential = generation_pdf.reduced_potential(initial_particle_state)
         initial_work = state_reduced_potential - generation_reduced_potential
+        _logger.debug(f"initial (importance) work: {initial_work} with state reduced potential ({state_reduced_potential}) and generation reduced potential ({generation_reduced_potential})")
+
 
         particle.update_state(initial_particle_state) #update the state
         particle.update_proposal_work(0.) #the initial work has no proposal work contribution
         #particle.update_work(initial_work) #we don't actually want to do this until the resampler says its ok
         particle.update_auxiliary_work(-state_reduced_potential) #we need this variable for the next increment
+        _logger.debug(f"successfully updated state, proposal work, and auxiliary work as the negative state reduced potential")
         return initial_work
-
-    def propagate(self, particle, n_steps = 1, **kwargs):
-        """
-        Propagate a particle's state and update in place
-
-        arguments
-            particle : coddiwomple.particles.ParticleState
-                the particle to propagate
-            n_steps : int, default 1
-                number of steps to increment the propagator
-        """
-        #first, update the pdf state
-        iteration = len(particle.incremental_works)
-        self.update_pdf(iteration)
-        _logger.debug(f"propagating at iteration: {iteration}...")
-
-        #then, propagate and update the state/proposal_work
-        state, proposal_work = self._propagator.apply(particle.state, **kwargs)
-        particle.update_state(state)
-        particle.update_proposal_work(proposal_work)
 
     def propagate(self, particle, num_applications = 1, **kwargs):
         """
@@ -255,13 +239,10 @@ class ProposalFactory(DistributionFactory):
         iteration = particle.iteration
         self.update_pdf(iteration)
         _logger.debug(f"propagating at iteration: {iteration}...")
-
-        _logger.debug(f"propagating {num_applications}...")
         proposal_work = 0.
         particle_state = particle.state
         for i in range(num_applications):
-            _logger.debug(f"applying move iteration {i+1}/{num_applications}...")
-            particle_state, work = self._propagator.apply(self.pdf_state, particle_state, **kwargs)
+            particle_state, work = self._propagator.apply(particle_state, **kwargs)
             proposal_work += work
         _logger.debug(f"total accumulated proposal work: {proposal_work}")
 

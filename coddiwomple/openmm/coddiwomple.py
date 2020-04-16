@@ -17,7 +17,10 @@ from coddiwomple.openmm.propagators import *
 from coddiwomple.openmm.integrators import *
 from coddiwomple.openmm.reporters import OpenMMReporter
 from coddiwomple.openmm.utils import *
+from coddiwomple.utils import *
 from coddiwomple.particles import Particle
+from coddiwomple.distribution_factories import *
+from coddiwomple.resamplers import *
 from perses.annihilation.lambda_protocol import RelativeAlchemicalState
 from simtk import unit
 import tqdm
@@ -118,6 +121,28 @@ def endstate_equilibration(system,
     except Exception as e:
         print(e)
 
+def handle_pressure(system):
+    """
+    determine whether to create a None pressure or at an atmosphere
+
+    arguments
+        system: openmm.System
+            system that will be queried
+
+    returns
+        pressure : unit.Quantity (atmospheres), or None
+            pressure to return
+    """
+    #determine pressure
+    forces = {type(force).__name__: force for force in system.getForces()}
+    if "MonteCarloBarostat" in list(forces.keys()):
+        pressure = 1.0 * unit.atmosphere
+    else:
+        pressure = None
+
+    return pressure
+
+
 def annealed_importance_sampling(system,
                                  endstate_cache_filename,
                                  directory_name,
@@ -164,11 +189,7 @@ def annealed_importance_sampling(system,
             kwargs to pass to OMMLIAIS integrator
     """
     #determine pressure
-    forces = {type(force).__name__: force for force in system.getForces()}
-    if "MonteCarloBarostat" in list(forces.keys()):
-        pressure = 1.0 * unit.atmosphere
-    else:
-        pressure = None
+    pressure = handle_pressure(system)
 
     print(f"pressure: {pressure}")
 
@@ -213,6 +234,110 @@ def annealed_importance_sampling(system,
 
 
     return ais_propagator.state_works
+
+def mcmc_smc_resampler(system,
+                       endstate_cache_filename,
+                       directory_name,
+                       trajectory_prefix,
+                       md_topology,
+                       number_of_particles,
+                       parameter_sequence,
+                       observable = nESS,
+                       threshold = vanilla_floor_threshold,
+                      alchemical_composability = RelativeAlchemicalState,
+                      integrator_kwargs = {'temperature': 300.0 * unit.kelvin,
+                                                      'collision_rate': 1.0 / unit.picoseconds,
+                                                      'timestep': 2.0 * unit.femtoseconds,
+                                                      'splitting': "V R O R V",
+                                                      'constraint_tolerance': 1e-6},
+                      record_state_work_interval = 1,
+                      trajectory_write_interval = 1):
+    """
+    Conduct a single-direction annealing protocol in the AIS regime (wherein particle incremental weights are computed according to Eq. 31 of https://www.stats.ox.ac.uk/~doucet/delmoral_doucet_jasra_sequentialmontecarlosamplersJRSSB.pdf)
+    with resampling.
+
+    arguments
+        system : openmm.System
+            parameterizable system
+        endstate_cache_filename : str
+            path to the endstate cache pdb
+        directory_name : str
+            directory that will be written to
+        trajectory_prefix : str
+            .pdb prefix
+        md_topology : mdtraj.Topology
+            topology that will write the trajectory
+        number_of_particles : int
+            number of particles that will be used
+        parameter_sequence : list of dict
+            list of dictionary of parameters to be set
+        observable : function
+            function to compute observables on particles
+        threshold : function
+            function to compute a threshold on an observable
+        alchemical_composability : openmmtools.alchemy.AlchemicalState
+            composer for alchemical composability creation
+        integrator_kwargs : dict, see default
+            kwargs to pass to OMMLIAIS integrator
+    """
+    pressure = handle_pressure(system)
+    print(f"pressure: {pressure}")
+
+    traj = md.Trajectory.load(endstate_cache_filename)
+    num_frames = traj.n_frames
+    proposal_pdf_state = OpenMMPDFState(system = system, alchemical_composability = alchemical_composability, pressure=pressure)
+    target_pdf_state = OpenMMPDFState(system = system, alchemical_composability = alchemical_composability, pressure = pressure)
+
+    reporter = OpenMMReporter(directory_name, trajectory_prefix, md_topology = md_topology)
+
+    integrator = OMMLI(**integrator_kwargs)
+    propagator = OMMBIP(proposal_pdf_state, integrator)
+    proposal_factory = ProposalFactory(parameter_sequence, propagator)
+    target_factory = TargetFactory(target_pdf_state, parameter_sequence, termination_parameters = None)
+
+    resampler = MultinomialResampler()
+
+    particles = [Particle(index = idx) for idx in range(number_of_particles)]
+
+    for idx in range(number_of_particles):
+        random_frame = np.random.choice(range(num_frames))
+        positions = traj.xyz[random_frame] * unit.nanometers
+        box_vectors = traj.unitcell_vectors[random_frame]*unit.nanometers
+        particle_state = OpenMMParticleState(positions=positions, box_vectors = box_vectors)
+        proposal_factory.equip_initial_sample(particle = particles[idx],
+                                          initial_particle_state = particle_state,
+                                          generation_pdf = None)
+        reporter.record(particles)
+
+    while True: #be careful...
+        [particle.update_iteration() for particle in particles]#update the iteration
+        incremental_works = np.array([target_factory.compute_incremental_work(particle, neglect_proposal_work = True) for particle in particles]) #compute incremental works
+        randomize_velocities = True if particles[0].iteration == 1 else False #whether to randomize velocities in the first iteration
+        [proposal_factory.propagate(particle, randomize_velocities=randomize_velocities) for particle in particles] #propagate particles
+        resampler.resample(particles, incremental_works, observable = observable, threshold = threshold, update_particle_indices = True) #attempt to resample particles
+
+        #ask to terminate
+        if all(target_factory.terminate(particle) for particle in particles):
+            reporter.record(particles)
+            break
+        else:
+            #update the auxiliary works...
+            [particle.zero_auxiliary_work() for particle in particles]
+            [particle.update_auxiliary_work(-target_factory.pdf_state.reduced_potential(particle.state)) for particle in particles]
+            reporter.record(particles, save_to_disk=True)
+
+    return particles
+
+
+
+
+
+
+
+
+
+
+
 
 
 

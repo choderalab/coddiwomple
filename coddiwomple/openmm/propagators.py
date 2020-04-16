@@ -92,6 +92,8 @@ class OMMBIP(mcmc.BaseIntegratorMove, Propagator):
               n_steps = 1,
               reset_integrator = False,
               apply_pdf_to_context = False,
+              returnable_key = None,
+              randomize_velocities = False,
               **kwargs):
         """
         Propagate the state through the integrator.
@@ -107,13 +109,17 @@ class OMMBIP(mcmc.BaseIntegratorMove, Propagator):
                 whether to reset the integrator
             apply_pdf_to_context : bool, default False
                 whether to self.pdf_state.apply_to_context
+            returnable_key : str, default 'proposal'
+                which 'work' to return as the second returnable
+            randomize_velocities : bool, default False
+                whether to randomize velocities on this particular application
 
 
         returns
             particle_state : OpenMMParticleState
                 The state to apply the move to. This is modified.
-            global_integrator_variables : dict
-                dict of integrator global variables
+            proposal_work : float
+                proposal work to return
 
         see also
             openmmtools.utils.Timer
@@ -130,7 +136,7 @@ class OMMBIP(mcmc.BaseIntegratorMove, Propagator):
         for attempt_counter in range(self.n_restart_attempts + 1):
             # If we reassign velocities, we can ignore the ones in particle_state.
             particle_state.apply_to_context(self.context, ignore_velocities=self.reassign_velocities)
-            if self.reassign_velocities:
+            if self.reassign_velocities or randomize_velocities:
                 self.context.setVelocitiesToTemperature(self.pdf_state.temperature)
 
             # Subclasses may implement _before_integration().
@@ -152,8 +158,6 @@ class OMMBIP(mcmc.BaseIntegratorMove, Propagator):
                 # Catches particle positions becoming nan during integration.
                 _logger.warning(f"Exception raised: {e}")
                 restart = True
-                context_state = self.context.getState(getPositions=True, getVelocities=True, getEnergy=True,
-                                                 enforcePeriodicBox=self.pdf_state.is_periodic)
             else:
                 # We get also velocities here even if we don't need them because we
                 # will recycle this State to update the sampler state object. This
@@ -198,15 +202,20 @@ class OMMBIP(mcmc.BaseIntegratorMove, Propagator):
         # This is an optimization around the fact that Collective Variables are not a part of the State,
         # but are a part of the Context. We do this call twice to minimize duplicating information fetched from
         # the State.
+        context_state = self.context.getState(getPositions=True, getVelocities=True, getEnergy=True,
+                                         enforcePeriodicBox=self.pdf_state.is_periodic)
         # Update everything but the collective variables from the State object
         particle_state.update_from_context(context_state, ignore_collective_variables=True)
         # Update only the collective variables from the Context
         particle_state.update_from_context(self.context, ignore_positions=True, ignore_velocities=True,
                                           ignore_collective_variables=False)
 
-        global_integrator_variables = self._get_global_integrator_variables()
+        if returnable_key is not None:
+            proposal_work = getattr(self.integrator, f"get_{returnable_key}_work")(dimensionless=True)
+        else:
+            proposal_work = 0.
 
-        return particle_state, global_integrator_variables
+        return particle_state, proposal_work
 
     def _get_integrator(self):
         pass

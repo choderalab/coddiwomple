@@ -6,10 +6,14 @@ OpenMM State Adapter Module
 from coddiwomple.states import ParticleState, PDFState
 from openmmtools.states import SamplerState, ThermodynamicState, CompoundThermodynamicState, IComposableState
 from openmmtools.alchemy import AlchemicalState
+from openmmtools import utils
+from perses.dispersed.utils import check_platform, configure_platform
 import os
 import numpy as np
 import logging
 from simtk import unit
+from simtk import openmm
+from coddiwomple.openmm.utils import get_dummy_integrator
 
 #####Instantiate Logger#####
 logging.basicConfig(level = logging.NOTSET)
@@ -75,6 +79,11 @@ class OpenMMPDFState(PDFState, CompoundThermodynamicState):
         self.__dict__ = openmm_pdf_state.__dict__
         self._composable_states = [alchemical_state]
         self.set_system(self._standard_system, fix_state=True)
+
+        #class create an internal context
+        integrator = get_dummy_integrator()
+        platform = configure_platform(utils.get_fastest_platform().getName())
+        self._internal_context = self.create_context(integrator)
         _logger.debug(f"successfully instantiated OpenMMPDFState equipped with the following parameters: {self._parameters}")
 
     def set_parameters(self, parameters):
@@ -89,6 +98,8 @@ class OpenMMPDFState(PDFState, CompoundThermodynamicState):
         for key,val in parameters.items():
             assert hasattr(self, key), f"{self} does not have a parameter named {key}"
             setattr(self, key, val)
+
+        self.apply_to_context(self._internal_context)
         _logger.debug(f"successfully updated OpenMMPDFState parameters as follows: {parameters}")
 
     def get_parameters(self):
@@ -101,3 +112,24 @@ class OpenMMPDFState(PDFState, CompoundThermodynamicState):
         """
         returnable_dict = {i:j for i, j in self._composable_states[0]._parameters.items() if j is not None}
         return returnable_dict
+
+    def reduced_potential(self, particle_state):
+        """
+        return the reduced potential energy of a particle state
+
+        arguments
+            particle_state : coddiwomple.openmm.states.OpenMMParticleState
+                the particle state at which the reduced potential will be calculated
+        """
+        particle_state.apply_to_context(self._internal_context, ignore_velocities=True)
+
+        state = self._internal_context.getState(getEnergy=True)
+        potential_energy = state.getPotentialEnergy()
+        volume = state.getPeriodicBoxVolume()
+
+        reduced_potential = potential_energy * self.beta
+
+        if self.pressure is not None:
+            reduced_potential += self.pressure * volume
+
+        return reduced_potential
