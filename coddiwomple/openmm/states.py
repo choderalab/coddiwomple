@@ -130,6 +130,6 @@ class OpenMMPDFState(PDFState, CompoundThermodynamicState):
         reduced_potential = potential_energy * self.beta
 
         if self.pressure is not None:
-            reduced_potential += self.pressure * volume
+            reduced_potential += self.pressure * volume * self.beta
 
         return reduced_potential
