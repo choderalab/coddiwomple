@@ -86,6 +86,7 @@ class Resampler():
             update_particle_indices : bool, default True
                 whether to update the particle indices
         """
+        _logger.debug(f"iteration: {particles[0].iteration}")
         if observable is None or threshold is None:
             resample_bool = True
             _logger.debug(f"observable and/or threshold is None; resampling...")
@@ -100,6 +101,9 @@ class Resampler():
             #the we will resample the particles
             previous_cumulative_works = np.array([particle.cumulative_work for particle in particles])
             updated_cumulative_works = previous_cumulative_works + incremental_works
+            _logger.debug(f"previous cumulative works: {previous_cumulative_works}")
+            _logger.debug(f"incremental works: {incremental_works}")
+            _logger.debug(f"updated_cumulative_works: {updated_cumulative_works}")
             mean_cumulative_work =  -logsumexp(-updated_cumulative_works) + np.log(len(updated_cumulative_works)) #we always do 'complete' resampling, and we can't do just an empirical average of works
             _logger.debug(f"mean cumulative work: {mean_cumulative_work} (i.e. complete resampling)")
             resampled_indices = self._resample(cumulative_works = updated_cumulative_works, num_resamples = len(updated_cumulative_works), **kwargs) #at present, always resample

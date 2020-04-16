@@ -10,7 +10,7 @@ import os
 #####Instantiate Logger#####
 logging.basicConfig(level = logging.NOTSET)
 _logger = logging.getLogger("distribution_factories")
-_logger.setLevel(logging.DEBUG)
+_logger.setLevel(logging.WARNING)
 
 
 class DistributionFactory():

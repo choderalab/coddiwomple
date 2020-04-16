@@ -18,7 +18,7 @@ from coddiwomple.openmm.utils import get_dummy_integrator
 #####Instantiate Logger#####
 logging.basicConfig(level = logging.NOTSET)
 _logger = logging.getLogger("openmm_states")
-_logger.setLevel(logging.DEBUG)
+_logger.setLevel(logging.WARNING)
 
 
 #ParticleState Adapter

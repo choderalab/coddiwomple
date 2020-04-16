@@ -19,7 +19,7 @@ from copy import deepcopy
 #####Instantiate Logger#####
 logging.basicConfig(level = logging.NOTSET)
 _logger = logging.getLogger("openmm_propagators")
-_logger.setLevel(logging.DEBUG)
+_logger.setLevel(logging.WARNING)
 
 #define the cache
 cache.global_context_cache.platform = configure_platform(utils.get_fastest_platform().getName())
