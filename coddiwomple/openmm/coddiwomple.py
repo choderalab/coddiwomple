@@ -314,18 +314,18 @@ def mcmc_smc_resampler(system,
             [particle.update_iteration() for particle in particles]#update the iteration
             incremental_works = np.array([target_factory.compute_incremental_work(particle, neglect_proposal_work = True) for particle in particles]) #compute incremental works
             randomize_velocities = True if particles[0].iteration == 1 else False #whether to randomize velocities in the first iteration
-            [proposal_factory.propagate(particle, randomize_velocities=randomize_velocities) for particle in particles] #propagate particles
+            [proposal_factory.propagate(particle, randomize_velocities=randomize_velocities, apply_pdf_to_context=True) for particle in particles] #propagate particles (be sure to save to context)
             resampler.resample(particles, incremental_works, observable = observable, threshold = threshold, update_particle_indices = True) #attempt to resample particles
 
             #ask to terminate
             if all(target_factory.terminate(particle) for particle in particles):
-                reporter.record(particles)
+                reporter.record(particles, save_to_disk=True)
                 break
             else:
                 #update the auxiliary works...
                 [particle.zero_auxiliary_work() for particle in particles]
                 [particle.update_auxiliary_work(-target_factory.pdf_state.reduced_potential(particle.state)) for particle in particles]
-                reporter.record(particles, save_to_disk=True)
+                reporter.record(particles)
         except Exception as e:
             print(f"error raised in iteration {particles[0].iteration}: {e}")
             break

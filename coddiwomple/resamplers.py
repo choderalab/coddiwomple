@@ -124,7 +124,7 @@ class Resampler():
                 #conduct particle updates
                 self._update_particle(particles[current_particle_index],
                                      from_particle_auxiliary_work = copy_particle_auxiliaries[resampling_particle_index],
-                                     from_particle_state = copy.deepcopy(copy_particle_states[resampling_particle_index]),
+                                     from_particle_state = copy_particle_states[resampling_particle_index],
                                      from_particle_index = copy_particle_indices[resampling_particle_index],
                                      cumulative_work = mean_cumulative_work)
         else:
