@@ -328,6 +328,7 @@ def mcmc_smc_resampler(system,
                 reporter.record(particles, save_to_disk=True)
         except Exception as e:
             print(f"error raised in iteration {particles[0].iteration}: {e}")
+            break
 
     return particles
 
