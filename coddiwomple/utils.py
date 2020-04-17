@@ -3,7 +3,7 @@ Utility Module
 """
 #####Imports#####
 import numpy as np
-from scipy.special import logsumexp
+from scipy.special import logsumexp, softmax
 
 def add_method(object, function):
         """
@@ -21,19 +21,6 @@ def add_method(object, function):
 def dummy_function():
     pass
 
-def unnormalized_weights(works):
-    """
-    simple utility function to compute particle weights from an array of works
-
-    arguments
-        works : np.array
-            unnormalized -log weights
-    returns
-        unnormalized_weights : np.array
-    """
-    unnormalized_weights = np.exp(-1 * works)
-    return unnormalized_weights
-
 def normalized_weights(works):
     """
     simple utility function to normalize an array of works
@@ -45,8 +32,8 @@ def normalized_weights(works):
         normalized_weights : np.array
             normalized_weights = np.exp(-1 * works - logsumexp(-1 * works))
     """
-    _unnormalized_weights = unnormalized_weights(works)
-    normalized_weights = _unnormalized_weights / np.exp(logsumexp(-1 * works))
+    log_weights = -works
+    normalized_weights = softmax(log_weights)
     return normalized_weights
 
 
