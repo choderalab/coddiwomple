@@ -29,7 +29,6 @@ def load_prereqs(factory_pickle = f"/data/perses_data/benzene_fluorobenzene.vacu
         alchemical_functions : dict
             dictionary of alchemical functions
     """
-    from perses.annihilation.lambda_protocol import RelativeAlchemicalState
     #load the system
     _pickle = resource_filename('coddiwomple', factory_pickle)
     print(f"_pickle: {pickle}")
@@ -63,6 +62,7 @@ def test_ais_propagator():
     """
     Test the OpenMM Annealed Importance Sampling Propagator and its subclasses
     """
+    from perses.annihilation.lambda_protocol import RelativeAlchemicalState
     traj, factory, alchemical_functions = load_prereqs()
     num_frames = traj.n_frames
     pdf_state = OpenMMPDFState(system = factory.hybrid_system, alchemical_composability = RelativeAlchemicalState, pressure=None)
