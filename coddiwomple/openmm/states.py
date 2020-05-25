@@ -83,7 +83,7 @@ class OpenMMPDFState(PDFState, CompoundThermodynamicState):
         #class create an internal context
         integrator = get_dummy_integrator()
         platform = configure_platform(utils.get_fastest_platform().getName())
-        self._internal_context = self.create_context(integrator)
+        self._internal_context = self.create_context(integrator, platform = platform)
         _logger.debug(f"successfully instantiated OpenMMPDFState equipped with the following parameters: {self._parameters}")
 
     def set_parameters(self, parameters):

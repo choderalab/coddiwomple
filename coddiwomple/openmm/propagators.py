@@ -97,8 +97,7 @@ class OMMBIP(mcmc.BaseIntegratorMove, Propagator):
               **kwargs):
         """
         Propagate the state through the integrator.
-        This updates the particle_state after the integration. It also logs
-        benchmarking information through the utils.Timer class.
+        This updates the particle_state after the integration.
 
         arguments
             particle_state : OpenMMParticleState
