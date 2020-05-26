@@ -210,7 +210,10 @@ class OMMBIP(mcmc.BaseIntegratorMove, Propagator):
                                           ignore_collective_variables=False)
 
         if returnable_key is not None:
-            proposal_work = getattr(self.integrator, f"get_{returnable_key}_work")(dimensionless=True)
+            try:
+                proposal_work = getattr(self.integrator, f"get_{returnable_key}_work")(dimensionless=True)
+            except Exception as e:
+                raise Exception(f"{e}; the returnable key {returnable_key} is not a valid method in {self.integrator.__class__.__name__}")
         else:
             proposal_work = 0.
 

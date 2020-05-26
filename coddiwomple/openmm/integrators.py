@@ -443,6 +443,27 @@ class OMMLI(integrators.ThermostatedIntegrator):
         self.addComputeGlobal("naccept", "ntrials - nreject")
         self.addComputeGlobal("shadow_work", "0")
 
+    def _get_energy_with_units(self, variable_name, dimensionless=False):
+        """
+        Retrive an energy/work quantity and return as unit-bearing or dimensionless quantity.
+
+        arguments
+            variable_name : str
+               Name of the global context variable to retrieve
+            dimensionless : bool, optional, default=False
+               If specified, the energy/work is returned in reduced (kT) unit.
+
+        returns
+            work : unit.Quantity or float
+               If dimensionless=True, the work in kT (float).
+               Otherwise, the unit-bearing work in units of energy.
+        """
+        work = self.getGlobalVariableByName(variable_name) * _OPENMM_ENERGY_UNIT
+        if dimensionless:
+            return work / self.kT
+        else:
+            return work
+
 
 class OMMLIAIS(OMMLI):
     """
