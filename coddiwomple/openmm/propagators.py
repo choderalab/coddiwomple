@@ -4,12 +4,9 @@ OpenMM Propagator Adapter Module
 
 #####Imports#####
 from coddiwomple.propagators import Propagator
-from openmmtools import utils
-from openmmtools.utils import Timer
 from openmmtools import mcmc
 from simtk import unit
 import simtk.openmm as openmm
-from coddiwomple.openmm.utils import get_dummy_integrator
 import os
 import numpy as np
 import logging
@@ -19,9 +16,6 @@ from copy import deepcopy
 logging.basicConfig(level = logging.NOTSET)
 _logger = logging.getLogger("openmm_propagators")
 _logger.setLevel(logging.WARNING)
-
-#define the cache
-cache.global_context_cache.platform = configure_platform(utils.get_fastest_platform().getName())
 
 #Propagator Adapter
 class OMMBIP(mcmc.BaseIntegratorMove, Propagator):
