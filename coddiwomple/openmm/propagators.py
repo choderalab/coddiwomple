@@ -4,10 +4,9 @@ OpenMM Propagator Adapter Module
 
 #####Imports#####
 from coddiwomple.propagators import Propagator
-from openmmtools import cache, utils
+from openmmtools import utils
 from openmmtools.utils import Timer
 from openmmtools import mcmc
-from perses.dispersed.utils import check_platform, configure_platform #TODO: make sure this is functional and supports mixed precision
 from simtk import unit
 import simtk.openmm as openmm
 from coddiwomple.openmm.utils import get_dummy_integrator
