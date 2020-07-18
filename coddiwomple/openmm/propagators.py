@@ -4,7 +4,7 @@ OpenMM Propagator Adapter Module
 
 #####Imports#####
 from coddiwomple.propagators import Propagator
-from openmmtools import mcmc
+from openmmtools.mcmc import BaseIntegratorMove
 from simtk import unit
 import simtk.openmm as openmm
 import os
@@ -18,7 +18,7 @@ _logger = logging.getLogger("openmm_propagators")
 _logger.setLevel(logging.WARNING)
 
 #Propagator Adapter
-class OMMBIP(mcmc.BaseIntegratorMove, Propagator):
+class OMMBIP(BaseIntegratorMove, Propagator):
     """
     Generalized OpenMM Base Integrator Propagator
     """
@@ -63,7 +63,7 @@ class OMMBIP(mcmc.BaseIntegratorMove, Propagator):
                          reassign_velocities = reassign_velocities,
                          n_restart_attempts = n_restart_attempts)
 
-        _logger.debug(f"successfully executed {mcmc.BaseIntegratorMove.__class__.__name__} init.")
+        _logger.debug(f"successfully executed {BaseIntegratorMove.__class__.__name__} init.")
 
         self.pdf_state = openmm_pdf_state
 
