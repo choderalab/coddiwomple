@@ -64,17 +64,21 @@ class OMMBIP(BaseIntegratorMove, Propagator):
                          n_restart_attempts = n_restart_attempts)
 
         _logger.debug(f"successfully executed {BaseIntegratorMove.__class__.__name__} init.")
+        import openmmtools.cache as cache
+        from perses.dispersed.utils import check_platform, configure_platform
+        from openmmtools.utils import get_fastest_platform
+        cache.global_context_cache.platform = configure_platform(get_fastest_platform().getName())
 
         self.pdf_state = openmm_pdf_state
 
         # Check if we have to use the global cache.
         if self.context_cache is None:
-            context_cache = cache.global_context_cache
+            self._context_cache = cache.global_context_cache
         else:
-            context_cache = self.context_cache
+            self._context_cache = self.context_cache
 
         # Create context and reset integrator for good measure
-        self.context, self.integrator = context_cache.get_context(self.pdf_state, integrator)
+        self.context, self.integrator = self._context_cache.get_context(self.pdf_state, integrator)
         self.integrator.reset()
 
         _logger.debug(f"successfully equipped integrator: {self.integrator.__class__.__name__}")
