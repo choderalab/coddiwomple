@@ -67,8 +67,10 @@ class OMMBIP(BaseIntegratorMove, Propagator):
         import openmmtools.cache as cache
         from perses.dispersed.utils import check_platform, configure_platform
         from openmmtools.utils import get_fastest_platform
-        cache.global_context_cache.platform = configure_platform(get_fastest_platform().getName())
-
+        try:
+            cache.global_context_cache.platform = configure_platform(get_fastest_platform().getName())
+        except Exception as e:
+            _logger.warning(f"platform configuration error: {e}")
         self.pdf_state = openmm_pdf_state
 
         # Check if we have to use the global cache.
