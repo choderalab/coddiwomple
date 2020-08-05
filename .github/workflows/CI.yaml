@@ -1,0 +1,80 @@
+name: ci #name of workflow
+
+on: #name of github event that triggers workflow
+  push: #so this is triggered on a push to
+    branches: #branches
+      - "master" #specifically, master and
+      - "maintenance/.+" #all other branches
+  pull_request: #when a pull request is made
+    branches: #on the branches of the PR
+      - "master" #including master
+      - "maintenance/.+" #and the lot
+  #page_build:
+  #release:
+  #  types:
+  #    - created
+  schedule:
+    # Run a cron job once daily
+    - cron: "0 0 * * *"
+
+jobs: #define the list of jobs (default run in parallel)
+  test: #the first job is a test
+    runs-on: ${{ matrix.os }} #define a matrix os
+    strategy:
+      fail-fast: false #do not cancel all jobs if any matrix job fails
+      matrix:
+        #node: [0,1] #not specifying nodes
+        os: [macOS-latest, ubuntu-latest] #specify the macOS/ubuntu latest envs (also needs to specify 'runs-on' above); also not specifying any node info
+        python-version: [3.6, 3.7] #with python 3.6,7
+    env:
+      PYVER: ${{ matrix.python-version }} #activate the approrpriate environment
+      PACKAGENAME: gitacttest
+      CI_OS: ${{ matrix.os }}$
+
+    steps: #define the steps of the job
+    - uses: actions/checkout@v2 #https://github.com/actions/checkout; checkout the local repo
+    - uses: goanpeca/setup-miniconda@v1 #https://github.com/goanpeca/setup-miniconda; setup a miniconda
+      with: #these are args for setup-miniconda
+        python-version: ${{ matrix.python-version }} #call the python version
+        activate-environment: test #activate an env
+        channel-priority: true #check out documentation for this
+        environment-file: devtools/conda-envs/test_env.yaml #call the appropriate test environment
+        auto-activate-base: false #do not activate base branch by default
+
+    - name: Additional info about the build
+      shell: bash
+      run: |
+        uname -a
+        df -h
+        ulimit -a
+    - name: Environment Information
+      shell: bash
+      run: |
+        conda info --all
+        conda list
+    - name: Install package and activate
+      shell: bash
+      run: |
+        . devtools/scripts/initialize_conda.sh
+        python -m pip install --no-deps .
+        
+    - name: Lint it up with flake8
+      shell: bash
+      run: |
+        pwd
+        python3 -V
+        conda info --envs
+        #python3 -m pip install flake8
+        #flake8 . --count --show-source --statistics
+        
+    - name: Run tests
+      shell: bash
+      run: |
+        conda activate test
+        PYTEST_ARGS=" -v --cov=gitacttest --cov-report=xml --color=yes"
+        pytest $PYTEST_ARGS gitacttest/tests
+#     - name: Codecov
+#       uses: codecov/codecov-action@v1
+#       with:
+#         file: ./coverage.xml
+#         fail_ci_if_error: true
