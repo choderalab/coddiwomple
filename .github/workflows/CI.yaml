@@ -52,7 +52,7 @@ jobs: #define the list of jobs (default run in parallel)
       shell: bash
       run: |
         echo $PATH
-        export PATH="~/user/miniconda/bin:$PATH"
+        export PATH="/home/user/miniconda/bin:$PATH"
         conda activate test        
     - name: Environment Information
       shell: bash
