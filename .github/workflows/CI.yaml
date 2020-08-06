@@ -71,8 +71,7 @@ jobs: #define the list of jobs (default run in parallel)
     - name: Run tests
       shell: bash
       run: |
-        #conda init bash #this is new...
-        #conda activate test #is there even a reason we need to activate this?
+        conda activate test
         PYTEST_ARGS=" -v --cov=gitacttest --cov-report=xml --color=yes"
         pytest $PYTEST_ARGS gitacttest/tests
 #     - name: Codecov
