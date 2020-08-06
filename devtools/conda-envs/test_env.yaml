@@ -1,15 +1,26 @@
 name: test
 channels:
+  - conda-forge
+  - omnia
+  - anaconda
+  - pytorch
 dependencies:
     # Base depends
   - python
   - pip
+  - openmmtools
+  - perses #this should install _all_ simulation dependencies
+  - pytorch
+  - torchvision
+  - cudatoolkit
 
     # Testing
   - pytest
   - pytest-cov
+  - codecov
+  - flake8
 
   # Pip-only installs
-  - pip:
-    - codecov
+  # - pip:
+  #  - codecov
 
