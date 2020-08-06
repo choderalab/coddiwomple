@@ -39,7 +39,7 @@ jobs: #define the list of jobs (default run in parallel)
         activate-environment: test #activate an env
         channel-priority: true #check out documentation for this
         environment-file: devtools/conda-envs/test_env.yaml #call the appropriate test environment
-        auto-activate-base: false #do not activate base branch by default
+        auto-activate-base: true #do not activate base branch by default
 
     - name: Additional info about the build
       shell: bash
