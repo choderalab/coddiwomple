@@ -47,6 +47,12 @@ jobs: #define the list of jobs (default run in parallel)
         uname -a
         df -h
         ulimit -a
+    
+    - name: Paths
+      shell: bash
+      run: |
+        echo $PATH
+        conda activate test        
     - name: Environment Information
       shell: bash
       run: |
@@ -62,8 +68,6 @@ jobs: #define the list of jobs (default run in parallel)
     - name: Lint it up with flake8
       shell: bash
       run: |
-        pwd
-        python3 -V
         conda info --envs
         #python3 -m pip install flake8
         #flake8 . --count --show-source --statistics
@@ -71,7 +75,6 @@ jobs: #define the list of jobs (default run in parallel)
     - name: Run tests
       shell: bash
       run: |
-        conda activate test
         PYTEST_ARGS=" -v --cov=gitacttest --cov-report=xml --color=yes"
         pytest $PYTEST_ARGS gitacttest/tests
 #     - name: Codecov
