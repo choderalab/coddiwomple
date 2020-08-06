@@ -50,6 +50,7 @@ jobs: #define the list of jobs (default run in parallel)
     - name: Environment Information
       shell: bash
       run: |
+        conda -V
         conda info --all
         conda list
     - name: Install package and activate
