@@ -28,7 +28,7 @@ jobs: #define the list of jobs (default run in parallel)
         python-version: [3.6, 3.7] #with python 3.6,7
     env:
       PYVER: ${{ matrix.python-version }} #activate the approrpriate environment
-      PACKAGENAME: gitacttest
+      PACKAGENAME: coddiwomple
       CI_OS: ${{ matrix.os }}$
 
     steps: #define the steps of the job
@@ -53,24 +53,25 @@ jobs: #define the list of jobs (default run in parallel)
       run: |
         conda info --all
         conda list
+        conda activate test
         
     - name: Install package and activate
       shell: bash
       run: |
         python -m pip install --no-deps .
         
-    - name: Lint it up with flake8
-      shell: bash -l {0}
-      run: |
-        conda info --envs
-        python -m pip install flake8
-        flake8 . --count --show-source --statistics
+#     - name: Lint it up with flake8
+#       shell: bash -l {0}
+#       run: |
+#         conda info --envs
+#         python -m pip install flake8
+#         flake8 . --count --show-source --statistics
         
     - name: Run tests
       shell: bash -l {0}
       run: |
-        PYTEST_ARGS=" -v --cov=gitacttest --cov-report=xml --color=yes"
-        pytest $PYTEST_ARGS gitacttest/tests
+        PYTEST_ARGS=" -v --cov=coddiwomple --cov-report=xml --color=yes"
+        pytest $PYTEST_ARGS coddiwomple/tests
 #     - name: Codecov
 #       uses: codecov/codecov-action@v1
 #       with:
