@@ -8,11 +8,11 @@ dependencies:
     # Base depends
   - python
   - pip
-  #- openmmtools
-  #- perses #this should install _all_ simulation dependencies
-  #- pytorch
-  #- torchvision
-  #- cudatoolkit
+  - openmmtools
+  - perses #this should install _all_ simulation dependencies
+  - pytorch
+  - torchvision
+  - cudatoolkit
 
     # Testing
   - pytest
