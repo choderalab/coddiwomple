@@ -8,6 +8,7 @@ dependencies:
     # Base depends
   - python
   - pip
+  - tqdm
   - openmmtools
   - perses #this should install _all_ simulation dependencies
   - pytorch
