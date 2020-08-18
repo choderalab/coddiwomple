@@ -55,6 +55,13 @@ jobs: #define the list of jobs (default run in parallel)
         conda list
         conda activate test
         
+    - name: Decrypt Openeye License
+      shell: bash
+      env:
+        ENC_OE_LICENSE: ${{ secrets.OE_LICENSE }}
+      run: |
+        echo "${ENC_OE_LICENSE}" > $HOME/oe_license
+        
     - name: Install package and activate
       shell: bash
       run: |
