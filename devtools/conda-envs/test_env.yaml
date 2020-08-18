@@ -4,6 +4,7 @@ channels:
   - omnia
   - anaconda
   - pytorch
+  - openeye
 dependencies:
     # Base depends
   - python
