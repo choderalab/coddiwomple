@@ -54,6 +54,7 @@ jobs: #define the list of jobs (default run in parallel)
         conda info --all
         conda list
         conda activate test
+        conda update -n base -c defaults conda
         
     - name: Decrypt Openeye License
       shell: bash
