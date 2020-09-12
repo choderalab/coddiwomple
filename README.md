@@ -1,7 +1,7 @@
 coddiwomple
 ==============================
 [//]: # (Badges)
-![](https://github.com/choderalab/coddiwomple/workflows/ci/badge.svg)
+![](https://github.com/choderalab/coddiwomple/workflows/CI/badge.svg)
 
 A pythonic Sequential Monte Carlo (SMC) library for molecular mechanics and Bayesian inference
 
