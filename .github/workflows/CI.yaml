@@ -40,6 +40,7 @@ jobs: #define the list of jobs (default run in parallel)
         channel-priority: true #check out documentation for this
         environment-file: devtools/conda-envs/test_env.yaml #call the appropriate test environment
         auto-activate-base: false #do not activate base branch by default
+        auto-update-conda: true #auto update the conda env
 
     - name: Additional info about the build
       shell: bash -l {0}
@@ -54,7 +55,7 @@ jobs: #define the list of jobs (default run in parallel)
         conda info --all
         conda list
         conda activate test
-        conda update -n base -c defaults conda
+        #conda update -n base -c defaults conda
         
     - name: Decrypt Openeye License
       shell: bash
