@@ -1,6 +1,7 @@
 coddiwomple
 ==============================
 [//]: # (Badges)
+![](https://github.com/choderalab/coddiwomple/workflows/CI/badge.svg)
 [![Travis Build Status](https://travis-ci.com/REPLACE_WITH_OWNER_ACCOUNT/coddiwomple.svg?branch=master)](https://travis-ci.com/REPLACE_WITH_OWNER_ACCOUNT/coddiwomple)
 [![codecov](https://codecov.io/gh/REPLACE_WITH_OWNER_ACCOUNT/coddiwomple/branch/master/graph/badge.svg)](https://codecov.io/gh/REPLACE_WITH_OWNER_ACCOUNT/coddiwomple/branch/master)
 
